@@ -1,3 +1,4 @@
+
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -9,6 +10,24 @@ interface CrawlStatusResponse {
   success: true;
   content: string;
   metadata: Record<string, any>;
+}
+
+interface SearchResult {
+  url: string;
+  title: string;
+  snippet: string;
+}
+
+interface SearchResponse {
+  success: boolean;
+  results?: SearchResult[];
+  error?: string;
+}
+
+interface ExtractResponse {
+  success: boolean;
+  data?: Record<string, any>;
+  error?: string;
 }
 
 type CrawlResponse = CrawlStatusResponse | ErrorResponse;
@@ -135,26 +154,28 @@ export class FirecrawlService {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          includeSelectors: [
-            'article',
-            'main',
-            '.content',
-            '.post',
-            '.article',
-            'h1, h2, h3',
-            'p',
-            'ul, ol',
-            'table'
-          ],
-          excludeSelectors: [
-            'nav',
-            'header',
-            'footer',
-            '.sidebar',
-            '.ads',
-            '.cookie-notice',
-            '.social-share'
-          ]
+          selectors: {
+            include: [
+              'article',
+              'main',
+              '.content',
+              '.post',
+              '.article',
+              'h1, h2, h3',
+              'p',
+              'ul, ol',
+              'table'
+            ],
+            exclude: [
+              'nav',
+              'header',
+              'footer',
+              '.sidebar',
+              '.ads',
+              '.cookie-notice',
+              '.social-share'
+            ]
+          }
         }
       }) as CrawlResponse;
       
@@ -167,6 +188,84 @@ export class FirecrawlService {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to connect to Firecrawl API' 
+      };
+    }
+  }
+
+  static async search(query: string, options: { limit?: number } = {}): Promise<SearchResponse> {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'API key not found' };
+    }
+
+    try {
+      console.log(`Searching for: ${query}`);
+      if (!this.firecrawlApp) {
+        this.firecrawlApp = new FirecrawlApp({ apiKey });
+      }
+
+      // Use the search method from Firecrawl
+      const searchResponse = await this.firecrawlApp.search(query, {
+        limit: options.limit || 5
+      });
+
+      if (searchResponse.success && searchResponse.results) {
+        return {
+          success: true,
+          results: searchResponse.results.map(result => ({
+            url: result.url,
+            title: result.title || '',
+            snippet: result.snippet || ''
+          }))
+        };
+      } else {
+        return {
+          success: false,
+          error: 'No search results found'
+        };
+      }
+    } catch (error) {
+      console.error('Error during search:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to search using Firecrawl API'
+      };
+    }
+  }
+
+  static async extractStructuredData(url: string, schema: Record<string, any>): Promise<ExtractResponse> {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'API key not found' };
+    }
+
+    try {
+      console.log(`Extracting structured data from: ${url}`);
+      if (!this.firecrawlApp) {
+        this.firecrawlApp = new FirecrawlApp({ apiKey });
+      }
+
+      // Use the extract method from Firecrawl
+      const extractResponse = await this.firecrawlApp.extract(url, {
+        schema: schema
+      });
+
+      if (extractResponse.success && extractResponse.data) {
+        return {
+          success: true,
+          data: extractResponse.data
+        };
+      } else {
+        return {
+          success: false,
+          error: 'Failed to extract structured data'
+        };
+      }
+    } catch (error) {
+      console.error('Error extracting structured data:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to extract data using Firecrawl API'
       };
     }
   }
