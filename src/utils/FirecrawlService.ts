@@ -75,7 +75,7 @@ export class FirecrawlService {
     }
     
     // Don't create Google search URLs as a fallback
-    // Instead return null to indicate this isn't a good URL to crawl
+    // Instead return empty string to indicate this isn't a good URL to crawl
     return "";
   }
   
@@ -126,11 +126,12 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
+      // Removed the 'selector' property since it doesn't exist in the type definition
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
         limit: 100, // Keep a reasonable limit for efficiency
         scrapeOptions: {
-          formats: ['markdown', 'html'],
-          selector: 'main, article, .content, #content, .main, #main' // Target content areas
+          formats: ['markdown', 'html']
+          // Removed selector property as it doesn't exist in the type
         }
       }) as CrawlResponse;
 

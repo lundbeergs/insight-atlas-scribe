@@ -21,7 +21,7 @@ export class SerpApiService {
     // Compose richer query with context
     let searchQ = query;
     if (extraContext) searchQ += " " + extraContext;
-    if (dateRange) searchQ += " " + dateStr;
+    if (dateRange) searchQ += " " + dateRange;
 
     try {
       // Use Google Search engine (SerpAPI)

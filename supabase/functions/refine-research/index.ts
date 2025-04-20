@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -169,35 +168,38 @@ Respond as JSON:
               
               // Process each SerpAPI result URL
               for (const serpLink of serpLinks.slice(0, 3)) {
-                const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${firecrawlAPIKey}`,
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                    url: serpLink,
-                    limit: 5,
-                    scrapeOptions: {
-                      formats: ['markdown', 'html'],
-                      selector: 'main, article, .content, #content, .main, #main' // Target content areas
-                    }
-                  })
-                });
-                const crawlResultJson = await crawlResult.json();
-                if (crawlResultJson.success) {
-                  // Validate content is useful
-                  if (crawlResultJson.content && crawlResultJson.content.length > 100) {
-                    newResults.push({
+                try {
+                  const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${firecrawlAPIKey}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
                       url: serpLink,
-                      content: crawlResultJson.content || '',
-                      metadata: crawlResultJson.metadata || {},
-                      searchQuery: target
-                    });
-                    console.log(`Successfully crawled ${serpLink}`);
-                  } else {
-                    console.log(`Content too short for ${serpLink}`);
+                      limit: 5,
+                      scrapeOptions: {
+                        formats: ['markdown', 'html']
+                      }
+                    })
+                  });
+                  const crawlResultJson = await crawlResult.json();
+                  if (crawlResultJson.success) {
+                    // Validate content is useful
+                    if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+                      newResults.push({
+                        url: serpLink,
+                        content: crawlResultJson.content || '',
+                        metadata: crawlResultJson.metadata || {},
+                        searchQuery: target
+                      });
+                      console.log(`Successfully crawled ${serpLink}`);
+                    } else {
+                      console.log(`Content too short for ${serpLink}`);
+                    }
                   }
+                } catch (error) {
+                  console.error(`Error crawling SerpAPI result ${serpLink}:`, error);
                 }
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
@@ -214,40 +216,43 @@ Respond as JSON:
           }
           
           // Perform the crawl using FireCrawl directly
-          const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${firecrawlAPIKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              url: processedUrl,
-              limit: 5,
-              scrapeOptions: {
-                formats: ['markdown', 'html'],
-                selector: 'main, article, .content, #content, .main, #main' // Target content areas
-              }
-            })
-          });
-          const crawlResultJson = await crawlResult.json();
-          if (crawlResultJson.success) {
-            // Validate content length
-            if (crawlResultJson.content && crawlResultJson.content.length > 100) {
-              newResults.push({
+          try {
+            const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${firecrawlAPIKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
                 url: processedUrl,
-                content: crawlResultJson.content || '',
-                metadata: crawlResultJson.metadata || {},
-                searchQuery: target
-              });
-              console.log(`Successfully crawled ${processedUrl}`);
+                limit: 5,
+                scrapeOptions: {
+                  formats: ['markdown', 'html']
+                }
+              })
+            });
+            const crawlResultJson = await crawlResult.json();
+            if (crawlResultJson.success) {
+              // Validate content length
+              if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+                newResults.push({
+                  url: processedUrl,
+                  content: crawlResultJson.content || '',
+                  metadata: crawlResultJson.metadata || {},
+                  searchQuery: target
+                });
+                console.log(`Successfully crawled ${processedUrl}`);
+              } else {
+                console.log(`Content too short for ${processedUrl}`);
+              }
             } else {
-              console.log(`Content too short for ${processedUrl}`);
+              console.error(`Failed to crawl ${processedUrl}:`, crawlResultJson.error);
             }
-          } else {
-            console.error(`Failed to crawl ${processedUrl}:`, crawlResultJson.error);
+          } catch (error) {
+            console.error(`Error in FireCrawl request for ${processedUrl}:`, error);
           }
         } catch (error) {
-          console.error(`Error crawling ${target}:`, error);
+          console.error(`Error processing target ${target}:`, error);
         }
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
@@ -263,38 +268,41 @@ Respond as JSON:
             }
 
             console.log(`Crawling industry-specific site: ${processedUrl}`);
-            const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${firecrawlAPIKey}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                url: processedUrl,
-                limit: 5,
-                scrapeOptions: {
-                  formats: ['markdown', 'html'],
-                  selector: 'main, article, .content, #content, .main, #main' // Target content areas
-                }
-              })
-            });
-            const crawlResultJson = await crawlResult.json();
-            if (crawlResultJson.success) {
-              // Only add if we have substantial content
-              if (crawlResultJson.content && crawlResultJson.content.length > 100) {
-                newResults.push({
+            try {
+              const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${firecrawlAPIKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
                   url: processedUrl,
-                  content: crawlResultJson.content || '',
-                  metadata: crawlResultJson.metadata || {},
-                  searchQuery: 'Industry-specific site'
-                });
-                console.log(`Successfully crawled industry site ${processedUrl}`);
-              } else {
-                console.log(`Content too short for industry site ${processedUrl}`);
+                  limit: 5,
+                  scrapeOptions: {
+                    formats: ['markdown', 'html']
+                  }
+                })
+              });
+              const crawlResultJson = await crawlResult.json();
+              if (crawlResultJson.success) {
+                // Only add if we have substantial content
+                if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+                  newResults.push({
+                    url: processedUrl,
+                    content: crawlResultJson.content || '',
+                    metadata: crawlResultJson.metadata || {},
+                    searchQuery: 'Industry-specific site'
+                  });
+                  console.log(`Successfully crawled industry site ${processedUrl}`);
+                } else {
+                  console.log(`Content too short for industry site ${processedUrl}`);
+                }
               }
+            } catch (error) {
+              console.error(`Error in FireCrawl request for industry site ${processedUrl}:`, error);
             }
           } catch (error) {
-            console.error(`Error crawling industry site ${target}:`, error);
+            console.error(`Error processing industry site ${target}:`, error);
           }
           await new Promise(resolve => setTimeout(resolve, 2000));
         }

@@ -30,7 +30,7 @@ serve(async (req) => {
     previousYear.setFullYear(previousYear.getFullYear() - 1);
     const previousYearStr = previousYear.toISOString().split('T')[0];
 
-    // Enhanced system prompt for specificity/context/sources/date
+    // Enhanced system prompt for specificity/context/sources/dates
     const prompt = `You are a research planning assistant that helps break down research questions into actionable components.
 
 Your job is to analyze a research question and create a structured plan with:
