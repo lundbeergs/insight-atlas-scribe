@@ -1,11 +1,16 @@
+
 import React, { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { createPlannerResponse } from "@/services/planner";
 import ResearchPlan from "@/components/ResearchPlan";
 import ApiKeyManager from "@/components/ApiKeyManager";
-import { WebScraperService, ScrapingResult } from "@/services/webScraperService";
+import { 
+  WebScraperService, 
+  ScrapingResult, 
+  ResearchPlan as ResearchPlanType
+} from "@/services/webScraperService";
 import { FirecrawlService } from "@/utils/FirecrawlService";
-import { supabase } from "@/integrations/supabase/client";
+import { ContentAnalysis } from "@/utils/ReasoningService";
 import ResearchForm from "@/components/research/ResearchForm";
 import ResearchProgress from "@/components/research/ResearchProgress";
 import ResearchResults from "@/components/research/ResearchResults";
@@ -13,31 +18,17 @@ import ResearchIterations from "@/components/research/ResearchIterations";
 import { Button } from "@/components/ui/button";
 import { Loader2, Search, RefreshCw } from "lucide-react";
 
-interface PlannerResponse {
-  intent: string;
-  searchFocus: string[];
-  informationGoals: string[];
-  originalQuestion: string;
-}
-
-interface ResearchIteration {
-  targets: string[];
-  results: ScrapingResult[];
-  analysis?: string;
-  extractionFocus?: string;
-}
-
 const ResearchPage = () => {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [isResearching, setIsResearching] = useState(false);
   const [researchProgress, setResearchProgress] = useState(0);
-  const [plannerResponse, setPlannerResponse] = useState<PlannerResponse | null>(null);
+  const [plannerResponse, setPlannerResponse] = useState<ResearchPlanType | null>(null);
   const [researchResults, setResearchResults] = useState<ScrapingResult[]>([]);
-  const [iterations, setIterations] = useState<ResearchIteration[]>([]);
   const [currentIteration, setCurrentIteration] = useState(0);
   const [isReasoning, setIsReasoning] = useState(false);
   const [analysisText, setAnalysisText] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<ContentAnalysis | null>(null);
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,11 +47,15 @@ const ResearchPage = () => {
     try {
       const response = await createPlannerResponse(question);
       setPlannerResponse(response);
+      
+      // Set the research plan in the WebScraperService
+      WebScraperService.setResearchPlan(response);
+      
       // Reset research state
       setResearchResults([]);
-      setIterations([]);
       setCurrentIteration(0);
       setAnalysisText(null);
+      setAnalysis(null);
       
       toast({
         title: "Research Plan Generated",
@@ -101,109 +96,66 @@ const ResearchPage = () => {
     setIsResearching(true);
     setResearchProgress(10);
     
-    // Start with the initial search targets from the planner
-    if (iterations.length === 0) {
-      setIterations([{
-        targets: plannerResponse.searchFocus,
-        results: []
-      }]);
-      setCurrentIteration(1);
-    } else {
-      setCurrentIteration(prev => prev + 1);
-    }
-    
     try {
-      const searchTargets = iterations.length === 0 
+      // Determine which search targets to use
+      const searchTargets = currentIteration === 0 
         ? plannerResponse.searchFocus 
-        : iterations[iterations.length - 1].targets;
+        : analysis?.improvedTargets || [];
       
+      if (searchTargets.length === 0) {
+        throw new Error("No search targets available");
+      }
+      
+      setCurrentIteration(prev => prev + 1);
       setResearchProgress(30);
-      console.log("Starting research with search targets:", searchTargets);
       
-      // First, do the initial scraping
-      const results = await WebScraperService.scrapeSearchTargets(searchTargets);
-      setResearchProgress(60);
+      // Execute the scraping
+      console.log("Starting research with search targets:", searchTargets);
+      const results = await WebScraperService.scrapeSearchTargets(
+        searchTargets,
+        (completed, total) => {
+          const progressPercent = 30 + (completed / total) * 30;
+          setResearchProgress(Math.min(60, progressPercent));
+        }
+      );
       
       if (results.length === 0) {
         toast({
-          title: "No Initial Results Found",
-          description: "No results found for the initial queries. AI will try to improve search.",
+          title: "No Results Found",
+          description: "No results found for the search queries. Try different search terms.",
           variant: "destructive",
         });
+        setIsResearching(false);
+        return;
       }
       
-      // Now use the AI to refine and improve results
+      // Add new results to the existing ones
+      const allResults = [...researchResults, ...results];
+      setResearchResults(allResults);
+      
+      // Now use the AI to analyze and refine the results
       setIsReasoning(true);
+      setResearchProgress(70);
       
-      const currentResults = [...researchResults, ...results];
-      setResearchResults(currentResults);
+      // Analyze the results
+      const contentAnalysis = await WebScraperService.analyzeAndRefine(
+        allResults,
+        plannerResponse.originalQuestion
+      );
       
-      setResearchProgress(80);
-      
-      // Call our edge function to refine the research
-      const refinementResponse = await supabase.functions.invoke('refine-research', {
-        body: { 
-          searchTargets, 
-          currentResults,
-          researchGoals: plannerResponse.informationGoals,
-          iteration: currentIteration
-        }
-      });
-      
-      const refinementData = refinementResponse.data;
-      
-      if (refinementData.error) {
-        console.error("Research refinement failed:", refinementData.error);
-        throw new Error(refinementData.error);
-      }
-      
-      // Update the iterations with the refined targets and results
-      const updatedIterations = [...iterations];
-      
-      // Update the current iteration with the results we got
-      if (updatedIterations.length > 0) {
-        updatedIterations[updatedIterations.length - 1].results = results;
-      }
-      
-      // Add the new iteration with improved targets
-      if (refinementData.improvedTargets && refinementData.improvedTargets.length > 0) {
-        updatedIterations.push({
-          targets: refinementData.improvedTargets,
-          results: refinementData.newResults || [],
-          analysis: refinementData.analysis,
-          extractionFocus: refinementData.extractionFocus
-        });
-      }
-      
-      setIterations(updatedIterations);
-      
-      // Add any new results
-      if (refinementData.newResults && refinementData.newResults.length > 0) {
-        setResearchResults(prev => [...prev, ...refinementData.newResults]);
-      }
-      
-      // Set the analysis text
-      setAnalysisText(refinementData.analysis || "No analysis available");
-      
+      setAnalysis(contentAnalysis);
+      setAnalysisText(contentAnalysis.analysis);
       setResearchProgress(100);
       
-      if (currentResults.length === 0 && (!refinementData.newResults || refinementData.newResults.length === 0)) {
-        toast({
-          title: "No Results Found",
-          description: "No results found after AI refinement. Try a different research question.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Research Complete",
-          description: `Found ${currentResults.length + (refinementData.newResults?.length || 0)} relevant results.`,
-        });
-      }
+      toast({
+        title: "Research Complete",
+        description: `Found ${results.length} new results. ${contentAnalysis.improvedTargets.length > 0 ? 'Continue researching for more insights.' : ''}`,
+      });
     } catch (error) {
       console.error("Error executing research:", error);
       toast({
         title: "Research Failed",
-        description: "An error occurred while researching. Please try again.",
+        description: error instanceof Error ? error.message : "An error occurred while researching.",
         variant: "destructive",
       });
     } finally {
@@ -214,6 +166,14 @@ const ResearchPage = () => {
 
   const continueResearch = () => {
     if (currentIteration < 3) {
+      if (!analysis || analysis.improvedTargets.length === 0) {
+        toast({
+          title: "No Further Directions",
+          description: "The AI couldn't identify any new search directions. Try a new research question.",
+          variant: "destructive",
+        });
+        return;
+      }
       executeResearch();
     } else {
       toast({
@@ -285,7 +245,7 @@ const ResearchPage = () => {
             analysisText={analysisText}
           />
           
-          <ResearchIterations iterations={iterations} />
+          <ResearchIterations iterations={WebScraperService.getIterations()} />
         </div>
       )}
     </div>
