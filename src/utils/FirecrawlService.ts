@@ -1,4 +1,3 @@
-
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -150,32 +149,31 @@ export class FirecrawlService {
       // Add to recent requests
       this.recentRequests.push({ timestamp: Date.now(), url: targetUrl });
 
+      // Fix the scrapeOptions structure to match the Firecrawl API expectations
       const crawlResponse = await this.firecrawlApp.crawlUrl(targetUrl, {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          selectors: {
-            include: [
-              'article',
-              'main',
-              '.content',
-              '.post',
-              '.article',
-              'h1, h2, h3',
-              'p',
-              'ul, ol',
-              'table'
-            ],
-            exclude: [
-              'nav',
-              'header',
-              'footer',
-              '.sidebar',
-              '.ads',
-              '.cookie-notice',
-              '.social-share'
-            ]
-          }
+          includeSelectors: [
+            'article',
+            'main',
+            '.content',
+            '.post',
+            '.article',
+            'h1, h2, h3',
+            'p',
+            'ul, ol',
+            'table'
+          ],
+          excludeSelectors: [
+            'nav',
+            'header',
+            'footer',
+            '.sidebar',
+            '.ads',
+            '.cookie-notice',
+            '.social-share'
+          ]
         }
       }) as CrawlResponse;
       
@@ -204,19 +202,19 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Use the search method from Firecrawl
+      // Use the search method from Firecrawl and properly handle its response structure
       const searchResponse = await this.firecrawlApp.search(query, {
         limit: options.limit || 5
       });
 
-      if (searchResponse.success && searchResponse.results) {
+      if (searchResponse && searchResponse.success === true) {
         return {
           success: true,
-          results: searchResponse.results.map(result => ({
+          results: searchResponse.results ? searchResponse.results.map(result => ({
             url: result.url,
             title: result.title || '',
             snippet: result.snippet || ''
-          }))
+          })) : []
         };
       } else {
         return {
@@ -245,9 +243,9 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Use the extract method from Firecrawl
+      // Fix type error by passing schema as an object or array as required by the API
       const extractResponse = await this.firecrawlApp.extract(url, {
-        schema: schema
+        schema: [schema]  // Pass schema as an array as expected by the API
       });
 
       if (extractResponse.success && extractResponse.data) {
