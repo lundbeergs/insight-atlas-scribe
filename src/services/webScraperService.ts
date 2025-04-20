@@ -112,7 +112,7 @@ export class WebScraperService {
                   this.currentResearchPlan.informationGoals
                 );
                 
-                // Fix: Convert schema to array if it's not already
+                // Ensure schema is always an array
                 const schemaArray = Array.isArray(schema) ? schema : [schema];
                 
                 const extractionResult = await FirecrawlService.extractStructuredData(target, schemaArray);

@@ -30,7 +30,7 @@ export class SearchService {
           searchResults = searchResponse.data.map(item => ({
             url: item.url || '',
             title: item.title || '',
-            snippet: item.snippet || item.description || ''
+            snippet: item.description || '' // Updated to use 'description' instead of 'snippet'
           }));
         }
         
