@@ -135,8 +135,6 @@ export class FirecrawlService {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          followLinks: true,
-          maxDepth: 2,
           includeSelectors: [
             'article',
             'main',

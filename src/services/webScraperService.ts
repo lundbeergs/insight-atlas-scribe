@@ -55,7 +55,7 @@ export class WebScraperService {
     const results: ScrapingResult[] = [];
     console.log('Starting to scrape search targets:', searchTargets);
 
-    // Process targets in batches of 3 (increased from 2)
+    // Process targets in batches of 3
     const batchSize = 3;
     const batches = [];
     
