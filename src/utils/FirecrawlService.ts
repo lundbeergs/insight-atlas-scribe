@@ -1,3 +1,4 @@
+
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -47,7 +48,8 @@ export class FirecrawlService {
     }
   }
 
-  private static isValidUrl(url: string): boolean {
+  // Changed from private to public by removing the 'private' modifier
+  static isValidUrl(url: string): boolean {
     try {
       new URL(url);
       return true;
@@ -56,7 +58,8 @@ export class FirecrawlService {
     }
   }
 
-  private static formatUrl(input: string): string {
+  // Changed from private to public by removing the 'private' modifier
+  static formatUrl(input: string): string {
     if (this.isValidUrl(input)) {
       return input;
     }
