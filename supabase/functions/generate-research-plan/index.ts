@@ -41,7 +41,7 @@ Your job is to analyze a research question and create a structured plan with:
     c. Append explicit date ranges (e.g., "2024", or "${previousYearStr} to ${currentDate}") to queries for time relevance.
     d. Build queries so that at least half are formatted as direct site:domain.com or event directory URLs (not just Google search terms).
     e. No more than 3 queries should be broad Google queries—prefer direct sources.
-    f. Always ensure a minimum of 7-8 unique, context-rich, and date-scoped queries for comprehensive results.
+    f. Always ensure a minimum of 5-7 unique, context-rich, and date-scoped queries for comprehensive results.
     g. Include specific URLs like "https://www.entrust.com/about/events/" if the site has a dedicated events page.
     h. For event research, include conference directory sites like eventbrite.com, conferenceindex.org and industry conference sites.
 3. Information Goals: What specific information the user is trying to obtain (summarized by you).
@@ -50,6 +50,8 @@ Your job is to analyze a research question and create a structured plan with:
 
 Today's date is: ${currentDate}.
 For current events or trends, use the past year (${previousYearStr} to ${currentDate}) as the default window unless otherwise stated.
+
+IMPORTANT: Keep the total search queries to a MAXIMUM of 7-8 total highly-targeted options.
 
 FORMAT your response as a single JSON object with these keys:
 {
@@ -63,32 +65,71 @@ FORMAT your response as a single JSON object with these keys:
 Make your plan thorough, focused, and always cover the most relevant industry and date-specific targets.
 `;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { 
-            role: 'system', 
-            content: prompt
-          },
-          { role: 'user', content: question + (context ? `\n\nAdditional context: ${context}` : '') }
-        ],
-        response_format: { type: "json_object" }
-      }),
-    });
+    // Add timeout for OpenAI request (45 seconds max)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-    const responseData = await response.json();
-    const plannerResponse = JSON.parse(responseData.choices[0].message.content);
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { 
+              role: 'system', 
+              content: prompt
+            },
+            { role: 'user', content: question + (context ? `\n\nAdditional context: ${context}` : '') }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.7,
+          max_tokens: 1000
+        }),
+      });
 
-    return new Response(
-      JSON.stringify(plannerResponse),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+      clearTimeout(timeoutId);
+      
+      // Handle non-successful responses
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("OpenAI API error:", errorData);
+        return new Response(
+          JSON.stringify({ error: 'OpenAI API error', details: errorData }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const responseData = await response.json();
+      const plannerResponse = JSON.parse(responseData.choices[0].message.content);
+      
+      // Limit searchFocus to max 7-8 items
+      if (plannerResponse.searchFocus && plannerResponse.searchFocus.length > 8) {
+        plannerResponse.searchFocus = plannerResponse.searchFocus.slice(0, 8);
+      }
+
+      return new Response(
+        JSON.stringify(plannerResponse),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      // Handle abort/timeout specifically
+      if (error.name === 'AbortError') {
+        console.error('OpenAI request timed out');
+        return new Response(
+          JSON.stringify({ error: 'Request timed out' }),
+          { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      throw error; // Re-throw for general error handling
+    }
   } catch (error) {
     console.error('Error in generate-research-plan function:', error);
     return new Response(

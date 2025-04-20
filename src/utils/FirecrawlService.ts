@@ -106,7 +106,7 @@ export class FirecrawlService {
     return true;
   }
 
-  static async crawlWebsite(url: string): Promise<{ success: boolean; error?: string; data?: any }> {
+  static async crawlWebsite(url: string, timeoutMs: number = 30000): Promise<{ success: boolean; error?: string; data?: any }> {
     // Skip invalid URLs early
     if (!url || !this.isValidUrl(url)) {
       return { 
@@ -120,20 +120,45 @@ export class FirecrawlService {
       return { success: false, error: 'API key not found' };
     }
 
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       console.log(`Making crawl request to Firecrawl API for: ${url}`);
       if (!this.firecrawlApp) {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Removed the 'selector' property since it doesn't exist in the type definition
+      // Check cache first
+      if (this.requestCache.has(url)) {
+        console.log(`Using cached result for ${url}`);
+        const cachedResponse = this.requestCache.get(url) as CrawlResponse;
+        
+        if (!cachedResponse.success) {
+          return { 
+            success: false, 
+            error: (cachedResponse as ErrorResponse).error || 'Failed to crawl website (cached)' 
+          };
+        }
+        
+        return { 
+          success: true,
+          data: cachedResponse 
+        };
+      }
+
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
-        limit: 100, // Keep a reasonable limit for efficiency
+        limit: 5, // Reduced from 100 to improve performance
         scrapeOptions: {
           formats: ['markdown', 'html']
-          // Removed selector property as it doesn't exist in the type
         }
       }) as CrawlResponse;
+
+      // Cache the result
+      this.requestCache.set(url, crawlResponse);
+
+      clearTimeout(timeoutId);
 
       if (!crawlResponse.success) {
         console.error('Crawl failed:', (crawlResponse as ErrorResponse).error);
@@ -144,7 +169,7 @@ export class FirecrawlService {
       }
 
       // Validate content is actually useful (not empty or too short)
-      if (!crawlResponse.content || crawlResponse.content.trim().length < 50) {
+      if (!crawlResponse.content || crawlResponse.content.trim().length < 100) {
         return {
           success: false,
           error: 'Retrieved content was too short or empty',
@@ -158,6 +183,17 @@ export class FirecrawlService {
         data: crawlResponse 
       };
     } catch (error) {
+      clearTimeout(timeoutId);
+      
+      // Handle timeout errors specifically
+      if (error.name === 'AbortError') {
+        console.error(`Crawl request timeout for ${url} after ${timeoutMs}ms`);
+        return { 
+          success: false, 
+          error: `Request timed out after ${timeoutMs/1000} seconds` 
+        };
+      }
+      
       console.error('Error during crawl:', error);
       return { 
         success: false, 
