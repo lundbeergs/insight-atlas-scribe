@@ -6,7 +6,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from "@/hooks/use-toast";
 import { createPlannerResponse } from "@/services/planner";
 import ResearchPlan from "@/components/ResearchPlan";
+import ResearchResults from "@/components/ResearchResults";
 import { Loader2 } from "lucide-react";
+import { WebScraperService, ScrapingResult } from "@/services/webScraperService";
+import { ResearchIteration, ResearchReasonerService, ResearchSummary } from "@/services/researchReasonerService";
+import { ApiKeyManager } from "@/components/ApiKeyManager";
 
 interface PlannerResponse {
   intent: string;
@@ -15,11 +19,19 @@ interface PlannerResponse {
   originalQuestion: string;
 }
 
+const MAX_ITERATIONS = 3;
+
 const ResearchPage = () => {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [plannerResponse, setPlannerResponse] = useState<PlannerResponse | null>(null);
   const { toast } = useToast();
+
+  // Research state
+  const [isExecutingResearch, setIsExecutingResearch] = useState(false);
+  const [researchIterations, setResearchIterations] = useState<ResearchIteration[]>([]);
+  const [currentIteration, setCurrentIteration] = useState(0);
+  const [researchSummary, setResearchSummary] = useState<ResearchSummary | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +49,11 @@ const ResearchPage = () => {
     try {
       const response = await createPlannerResponse(question);
       setPlannerResponse(response);
+      // Reset any previous research
+      setResearchIterations([]);
+      setCurrentIteration(0);
+      setResearchSummary(null);
+      
       toast({
         title: "Research Plan Generated",
         description: "Your research plan has been created successfully.",
@@ -53,9 +70,112 @@ const ResearchPage = () => {
     }
   };
 
+  const executeResearch = async () => {
+    if (!plannerResponse) return;
+    
+    setIsExecutingResearch(true);
+    setResearchSummary(null);
+
+    try {
+      await conductIterativeResearch(plannerResponse.searchFocus);
+    } catch (error) {
+      console.error("Error executing research:", error);
+      toast({
+        title: "Research Error",
+        description: "An error occurred during research. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExecutingResearch(false);
+    }
+  };
+
+  const conductIterativeResearch = async (initialQueries: string[]) => {
+    let currentQueries = initialQueries;
+    let iterations: ResearchIteration[] = [];
+    let iterationCount = 0;
+    let isDone = false;
+
+    while (!isDone && iterationCount < MAX_ITERATIONS) {
+      setCurrentIteration(iterationCount);
+      
+      // 1. Search for information using current queries
+      toast({
+        title: "Researching",
+        description: `Iteration ${iterationCount + 1}: Searching for information...`,
+      });
+      
+      const results = await WebScraperService.conductResearch(currentQueries);
+      
+      if (results.length === 0) {
+        toast({
+          title: "No Results",
+          description: "No results found for the current queries.",
+          variant: "destructive",
+        });
+        break;
+      }
+
+      // 2. Analyze results and determine next steps
+      toast({
+        title: "Analyzing",
+        description: `Iteration ${iterationCount + 1}: Analyzing search results...`,
+      });
+      
+      const analysis = await ResearchReasonerService.analyzeResults(
+        plannerResponse.originalQuestion, 
+        results,
+        iterations
+      );
+
+      // 3. Save this iteration
+      const newIteration: ResearchIteration = {
+        id: iterationCount + 1,
+        searchQueries: currentQueries,
+        results: results,
+        analysis: analysis.analysis,
+        confidence: analysis.confidence,
+        nextSteps: analysis.nextQueries
+      };
+      
+      iterations = [...iterations, newIteration];
+      setResearchIterations(iterations);
+      
+      // 4. Determine whether to continue
+      isDone = analysis.isDone || iterationCount >= MAX_ITERATIONS - 1;
+      
+      if (!isDone) {
+        // Prepare for next iteration
+        currentQueries = analysis.nextQueries;
+        iterationCount++;
+      } else {
+        // Generate final summary
+        toast({
+          title: "Completing Research",
+          description: "Generating final research summary...",
+        });
+        
+        const summary = await ResearchReasonerService.generateSummary(
+          plannerResponse.originalQuestion,
+          iterations
+        );
+        
+        setResearchSummary(summary);
+        
+        toast({
+          title: "Research Complete",
+          description: "Your research has been completed successfully.",
+        });
+      }
+    }
+  };
+
   return (
-    <div className="container mx-auto py-8 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-8 text-center">AI Research Assistant</h1>
+    <div className="container mx-auto py-8 max-w-5xl">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-center">AI Research Assistant</h1>
+        <ApiKeyManager />
+      </div>
       
       <Card className="mb-8">
         <CardHeader>
@@ -88,7 +208,28 @@ const ResearchPage = () => {
         </form>
       </Card>
 
-      {plannerResponse && <ResearchPlan plan={plannerResponse} />}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="lg:col-span-2">
+          {plannerResponse && (
+            <ResearchPlan 
+              plan={plannerResponse} 
+              onExecute={executeResearch}
+              isExecuting={isExecutingResearch}
+            />
+          )}
+        </div>
+        
+        <div className="lg:col-span-3">
+          {(researchIterations.length > 0 || isExecutingResearch) && (
+            <ResearchResults 
+              iterations={researchIterations}
+              summary={researchSummary}
+              currentIteration={currentIteration}
+              loading={isExecutingResearch}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 };
