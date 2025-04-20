@@ -1,5 +1,5 @@
 
-import { FirecrawlService } from './FirecrawlService';
+import { FirecrawlService } from '../utils/FirecrawlService';
 
 export interface ScrapingResult {
   url: string;
