@@ -12,19 +12,18 @@ export class WebScraperService {
     const results: ScrapingResult[] = [];
     console.log('Starting to scrape search targets:', searchTargets);
 
-    // Process targets in parallel but with limitations to avoid overloading
     const maxConcurrent = 2; // Limit based on FireCrawl plan
     const batches = [];
-    
+
     // Create batches of max concurrent requests
     for (let i = 0; i < searchTargets.length; i += maxConcurrent) {
       batches.push(searchTargets.slice(i, i + maxConcurrent));
     }
-    
+
     for (const batch of batches) {
       console.log(`Processing batch of ${batch.length} targets`);
-      
-      // Process this batch in parallel
+
+      // Pre-format the targets before crawling
       const batchPromises = batch.map(async (target) => {
         try {
           const apiKey = FirecrawlService.getApiKey();
@@ -33,36 +32,38 @@ export class WebScraperService {
             return null;
           }
 
-          console.log(`Scraping target: ${target}`);
-          const crawlResult = await FirecrawlService.crawlWebsite(target);
-          
+          // Preprocess target (convert phrases to Google Search URLs if not already a URL)
+          const formattedTarget = FirecrawlService.formatUrl(target);
+          console.log(`Scraping target (formatted): ${formattedTarget}`);
+          const crawlResult = await FirecrawlService.crawlWebsite(formattedTarget);
+
           if (crawlResult.success && crawlResult.data) {
-            console.log(`Successfully scraped ${target}`);
+            console.log(`Successfully scraped ${formattedTarget}`);
             return {
-              url: target,
+              url: formattedTarget,
               content: crawlResult.data.content || '',
               metadata: crawlResult.data.metadata
             };
           } else {
-            console.warn(`Failed to scrape ${target}:`, crawlResult.error);
+            console.warn(`Failed to scrape ${formattedTarget}:`, crawlResult.error);
             return null;
           }
         } catch (error) {
-          console.error(`Error scraping ${target}:`, error);
+          console.error(`Error scraping target:`, error);
           return null;
         }
       });
-      
+
       // Wait for all promises in this batch to resolve
       const batchResults = await Promise.all(batchPromises);
-      
+
       // Add successful results
       for (const result of batchResults) {
         if (result) {
           results.push(result);
         }
       }
-      
+
       // Add a small delay between batches to avoid rate limiting
       if (batches.length > 1) {
         await new Promise(resolve => setTimeout(resolve, 2000));
