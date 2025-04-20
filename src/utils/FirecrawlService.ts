@@ -1,4 +1,3 @@
-
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -150,33 +149,31 @@ export class FirecrawlService {
       // Add to recent requests
       this.recentRequests.push({ timestamp: Date.now(), url: targetUrl });
 
-      // Use the correct format for scrapeOptions according to FirecrawlApp API
+      // Using the format directly supported by FirecrawlApp API
       const crawlResponse = await this.firecrawlApp.crawlUrl(targetUrl, {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
-          selectors: {
-            include: [
-              'article',
-              'main',
-              '.content',
-              '.post',
-              '.article',
-              'h1, h2, h3',
-              'p',
-              'ul, ol',
-              'table'
-            ],
-            exclude: [
-              'nav',
-              'header',
-              'footer',
-              '.sidebar',
-              '.ads',
-              '.cookie-notice',
-              '.social-share'
-            ]
-          },
-          formats: ['markdown', 'html']
+          formats: ['markdown', 'html'],
+          include: [
+            'article',
+            'main',
+            '.content',
+            '.post',
+            '.article',
+            'h1, h2, h3',
+            'p',
+            'ul, ol',
+            'table'
+          ],
+          exclude: [
+            'nav',
+            'header',
+            'footer',
+            '.sidebar',
+            '.ads',
+            '.cookie-notice',
+            '.social-share'
+          ]
         }
       }) as CrawlResponse;
       
@@ -205,40 +202,33 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Call the search method from Firecrawl
-      const searchResult = await this.firecrawlApp.search(query, {
+      // Call the search method directly as per API
+      const searchResponse = await this.firecrawlApp.search(query, {
         limit: options.limit || 5
       });
 
-      // Handle the response defensively based on the actual API return structure
-      if (searchResult && typeof searchResult === 'object') {
-        if (searchResult.success === true && Array.isArray(searchResult.data)) {
-          // If search results are in the data property
-          return {
-            success: true,
-            results: searchResult.data.map(result => ({
-              url: result.url || '',
-              title: result.title || '',
-              snippet: result.snippet || ''
-            }))
-          };
-        } else if (searchResult.success === true && Array.isArray(searchResult.results)) {
-          // If search results are directly in the results property
-          return {
-            success: true,
-            results: searchResult.results.map(result => ({
-              url: result.url || '',
-              title: result.title || '',
-              snippet: result.snippet || ''
-            }))
-          };
+      // If the response is successful and has results
+      if (searchResponse && typeof searchResponse === 'object' && searchResponse.success === true) {
+        let searchResults: SearchResult[] = [];
+        
+        // Handle potential data structure variations
+        if (Array.isArray(searchResponse.data)) {
+          searchResults = searchResponse.data.map(item => ({
+            url: item.url || '',
+            title: item.title || '',
+            snippet: item.content?.substring(0, 150) || ''
+          }));
         }
+        
+        return {
+          success: true,
+          results: searchResults
+        };
       }
       
-      // Default fallback if structure doesn't match expectations
       return {
         success: false,
-        error: 'No search results found or unexpected API response format'
+        error: 'No search results found'
       };
     } catch (error) {
       console.error('Error during search:', error);
@@ -261,15 +251,15 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Ensure schema is passed as an array according to API requirements
-      const schemaArray = Array.isArray(schema) ? schema : [schema];
+      // Convert schema to array format if it's not already
+      const schemaArray = [schema]; // Always wrap in array to ensure correct type
       
       // Call the extract method
       const extractResult = await this.firecrawlApp.extract(url, {
-        schemas: schemaArray  // Using 'schemas' instead of 'schema' if that's what the API expects
+        schema: schemaArray // Using 'schema' property as per API specs
       });
 
-      if (extractResult.success && extractResult.data) {
+      if (extractResult && extractResult.success && extractResult.data) {
         return {
           success: true,
           data: extractResult.data
