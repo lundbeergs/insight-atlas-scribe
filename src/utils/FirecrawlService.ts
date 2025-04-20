@@ -1,4 +1,3 @@
-
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -88,63 +87,21 @@ export class FirecrawlService {
     return true;
   }
 
-  static async crawlWebsite(url: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  static async crawlWebsite(url: string): Promise<{ success: boolean; error?: string; data?: any }> {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       return { success: false, error: 'API key not found' };
     }
 
     try {
-      console.log(`Initiating crawl for URL: ${url}`);
+      console.log('Making crawl request to Firecrawl API');
       if (!this.firecrawlApp) {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Format URL properly
-      const targetUrl = this.formatUrl(url);
-      console.log(`Processed URL for crawling: ${targetUrl}`);
-      
-      // Check cache first
-      if (this.requestCache.has(targetUrl)) {
-        console.log(`Using cached result for ${targetUrl}`);
-        const cachedResponse = this.requestCache.get(targetUrl) as CrawlResponse;
-        
-        if (!cachedResponse.success) {
-          return { 
-            success: false, 
-            error: (cachedResponse as ErrorResponse).error || 'Failed to crawl website (cached result)' 
-          };
-        }
-        
-        return { 
-          success: true,
-          data: {
-            content: (cachedResponse as CrawlStatusResponse).content,
-            metadata: (cachedResponse as CrawlStatusResponse).metadata
-          }
-        };
-      }
-      
-      // Check rate limit
-      if (!this.enforceRateLimit()) {
-        return { 
-          success: false, 
-          error: 'Rate limit reached. Try again in a minute.' 
-        };
-      }
-      
-      // Add to recent requests
-      this.recentRequests.push({ timestamp: Date.now(), url: targetUrl });
-
-      const crawlResponse = await this.firecrawlApp.crawlUrl(targetUrl, {
-        limit: 5, // Limit to 5 pages per domain for efficiency
-        scrapeOptions: {
-          formats: ['markdown', 'html']
-        }
+      const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
+        limit: 100 // Keep a reasonable limit for efficiency
       }) as CrawlResponse;
-      
-      // Cache the response
-      this.requestCache.set(targetUrl, crawlResponse);
 
       if (!crawlResponse.success) {
         console.error('Crawl failed:', (crawlResponse as ErrorResponse).error);
@@ -154,13 +111,10 @@ export class FirecrawlService {
         };
       }
 
-      console.log('Crawl successful for:', targetUrl);
+      console.log('Crawl successful:', crawlResponse);
       return { 
         success: true,
-        data: {
-          content: crawlResponse.content,
-          metadata: crawlResponse.metadata
-        }
+        data: crawlResponse 
       };
     } catch (error) {
       console.error('Error during crawl:', error);
