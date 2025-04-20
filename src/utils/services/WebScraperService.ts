@@ -90,26 +90,28 @@ export class WebScraperService {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          include: [
-            'article',
-            'main',
-            '.content',
-            '.post',
-            '.article',
-            'h1, h2, h3',
-            'p',
-            'ul, ol',
-            'table'
-          ],
-          exclude: [
-            'nav',
-            'header',
-            'footer',
-            '.sidebar',
-            '.ads',
-            '.cookie-notice',
-            '.social-share'
-          ]
+          selectors: {
+            include: [
+              'article',
+              'main',
+              '.content',
+              '.post',
+              '.article',
+              'h1, h2, h3',
+              'p',
+              'ul, ol',
+              'table'
+            ],
+            exclude: [
+              'nav',
+              'header',
+              'footer',
+              '.sidebar',
+              '.ads',
+              '.cookie-notice',
+              '.social-share'
+            ]
+          }
         }
       }) as CrawlResponse;
       

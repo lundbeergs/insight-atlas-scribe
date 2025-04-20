@@ -13,7 +13,7 @@ export class DataExtractionService {
       console.log(`Extracting structured data from: ${url}`);
       const client = FirecrawlCore.getClient();
 
-      const extractResult = await client.extract(url, {
+      const extractResult = await client.extract([url], {
         schema
       });
 

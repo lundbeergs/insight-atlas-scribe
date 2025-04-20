@@ -1,4 +1,3 @@
-
 import { FirecrawlService } from '../utils/FirecrawlService';
 import { ReasoningService, ContentAnalysis } from '../utils/ReasoningService';
 
@@ -111,7 +110,11 @@ export class WebScraperService {
                 const schema = ReasoningService.generateExtractionSchema(
                   this.currentResearchPlan.informationGoals
                 );
-                const extractionResult = await FirecrawlService.extractStructuredData(target, schema);
+                
+                // Fix: Convert schema to array if it's not already
+                const schemaArray = Array.isArray(schema) ? schema : [schema];
+                
+                const extractionResult = await FirecrawlService.extractStructuredData(target, schemaArray);
                 if (extractionResult.success && extractionResult.data) {
                   result.extractedData = extractionResult.data;
                 }

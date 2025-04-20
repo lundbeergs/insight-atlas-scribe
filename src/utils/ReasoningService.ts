@@ -104,10 +104,14 @@ export class ReasoningService {
   
   /**
    * Generates enhanced extraction schema based on content and goals
+   * Returns an array of schema objects
    */
-  static generateExtractionSchema(informationGoals: string[]): Record<string, any> {
+  static generateExtractionSchema(informationGoals: string[]): Record<string, any>[] {
     // Create a dynamic schema based on information goals
-    const schema: Record<string, any> = {
+    const schemaItems: Record<string, any>[] = [];
+    
+    // Base schema item
+    const baseSchema: Record<string, any> = {
       title: { type: "STRING", selector: "h1" },
       content: { type: "STRING", selector: "article, main, .content" },
     };
@@ -115,12 +119,15 @@ export class ReasoningService {
     // Add fields based on information goals
     informationGoals.forEach((goal, index) => {
       const fieldName = `goal_${index + 1}`;
-      schema[fieldName] = { 
+      baseSchema[fieldName] = { 
         type: "STRING", 
         description: goal
       };
     });
     
-    return schema;
+    // Add the schema to the array
+    schemaItems.push(baseSchema);
+    
+    return schemaItems;
   }
 }
