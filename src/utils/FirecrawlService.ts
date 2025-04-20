@@ -68,7 +68,6 @@ export class FirecrawlService {
         limit: 5, // Limit to 5 pages per domain for efficiency
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          followLinks: true,
           maxDepth: 2
         }
       }) as CrawlResponse;
