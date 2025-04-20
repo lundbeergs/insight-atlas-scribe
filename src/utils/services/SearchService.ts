@@ -19,6 +19,7 @@ export class SearchService {
       console.log(`Searching for: ${query}`);
       const client = FirecrawlCore.getClient();
 
+      // According to docs: https://docs.firecrawl.dev/api-reference/endpoint/search
       const searchResponse = await client.search(query, {
         limit: options.limit || 5
       });
@@ -27,10 +28,11 @@ export class SearchService {
         let searchResults: SearchResult[] = [];
         
         if (Array.isArray(searchResponse.data)) {
+          // Map according to the Firecrawl API response format
           searchResults = searchResponse.data.map(item => ({
             url: item.url || '',
             title: item.title || '',
-            snippet: item.description || '' // Updated to use 'description' instead of 'snippet'
+            snippet: item.description || '' // Firecrawl returns 'description' not 'snippet'
           }));
         }
         

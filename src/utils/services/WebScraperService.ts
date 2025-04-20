@@ -86,33 +86,32 @@ export class WebScraperService {
       
       this.recentRequests.push({ timestamp: Date.now(), url: targetUrl });
 
-      // Updated to match the correct API structure according to the docs
+      // Updated according to Firecrawl API documentation
+      // https://docs.firecrawl.dev/api-reference/endpoint/crawl-post
       const crawlResponse = await client.crawlUrl(targetUrl, {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          selectors: {
-            include: [
-              'article',
-              'main',
-              '.content',
-              '.post',
-              '.article',
-              'h1, h2, h3',
-              'p',
-              'ul, ol',
-              'table'
-            ],
-            exclude: [
-              'nav',
-              'header',
-              'footer',
-              '.sidebar',
-              '.ads',
-              '.cookie-notice',
-              '.social-share'
-            ]
-          }
+          includeSelectors: [
+            'article',
+            'main',
+            '.content',
+            '.post',
+            '.article',
+            'h1, h2, h3',
+            'p',
+            'ul, ol',
+            'table'
+          ],
+          excludeSelectors: [
+            'nav',
+            'header',
+            'footer',
+            '.sidebar',
+            '.ads',
+            '.cookie-notice',
+            '.social-share'
+          ]
         }
       }) as CrawlResponse;
       

@@ -13,7 +13,8 @@ export class DataExtractionService {
       console.log(`Extracting structured data from: ${url}`);
       const client = FirecrawlCore.getClient();
 
-      // Fix: Pass an array of URLs as required by the Firecrawl API
+      // Pass an array of URLs as required by the Firecrawl API
+      // https://docs.firecrawl.dev/api-reference/endpoint/extract
       const extractResult = await client.extract([url], {
         schema
       });
