@@ -1,5 +1,5 @@
-
 import { FirecrawlService } from '../utils/FirecrawlService';
+import { SerpApiService } from '../utils/SerpApiService';
 
 export interface ScrapingResult {
   url: string;
@@ -10,20 +10,48 @@ export interface ScrapingResult {
 export class WebScraperService {
   static async scrapeSearchTargets(searchTargets: string[]): Promise<ScrapingResult[]> {
     const results: ScrapingResult[] = [];
-    console.log('Starting to scrape search targets:', searchTargets);
+    console.log('Starting to scrape search targets (SerpAPI+Firecrawl):', searchTargets);
+
+    // First get the SerpAPI key (if not present, fallback to original logic)
+    const serpApiKey = SerpApiService.getApiKey();
 
     const maxConcurrent = 2; // Limit based on FireCrawl plan
-    const batches = [];
+    const allTargets: string[] = [];
 
-    // Create batches of max concurrent requests
-    for (let i = 0; i < searchTargets.length; i += maxConcurrent) {
-      batches.push(searchTargets.slice(i, i + maxConcurrent));
+    for (const target of searchTargets) {
+      // If it's already a URL, use as-is
+      if (FirecrawlService.isValidUrl(target)) {
+        allTargets.push(target);
+      } else if (serpApiKey) {
+        // Otherwise, resolve via SerpAPI
+        try {
+          const foundUrls = await SerpApiService.getTopSearchUrls(target, 3);
+          if (foundUrls.length) {
+            console.log(`SerpAPI found URLs for "${target}":`, foundUrls);
+            allTargets.push(...foundUrls);
+          } else {
+            // Fallback to Firecrawl's formatUrl if none found
+            allTargets.push(FirecrawlService.formatUrl(target));
+          }
+        } catch (err) {
+          console.error('Error with SerpAPI:', err);
+          // Fallback to Firecrawl formatting
+          allTargets.push(FirecrawlService.formatUrl(target));
+        }
+      } else {
+        // No SerpApi key: fallback to Firecrawl formatUrl
+        allTargets.push(FirecrawlService.formatUrl(target));
+      }
+    }
+
+    // Split into batches for concurrent crawling
+    const batches = [];
+    for (let i = 0; i < allTargets.length; i += maxConcurrent) {
+      batches.push(allTargets.slice(i, i + maxConcurrent));
     }
 
     for (const batch of batches) {
       console.log(`Processing batch of ${batch.length} targets`);
-
-      // Pre-format the targets before crawling
       const batchPromises = batch.map(async (target) => {
         try {
           const apiKey = FirecrawlService.getApiKey();
@@ -31,21 +59,17 @@ export class WebScraperService {
             console.warn('No FireCrawl API key found. Please set your API key in the settings.');
             return null;
           }
-
-          // Preprocess target (convert phrases to Google Search URLs if not already a URL)
-          const formattedTarget = FirecrawlService.formatUrl(target);
-          console.log(`Scraping target (formatted): ${formattedTarget}`);
-          const crawlResult = await FirecrawlService.crawlWebsite(formattedTarget);
+          const crawlResult = await FirecrawlService.crawlWebsite(target);
 
           if (crawlResult.success && crawlResult.data) {
-            console.log(`Successfully scraped ${formattedTarget}`);
+            console.log(`Successfully scraped ${target}`);
             return {
-              url: formattedTarget,
+              url: target,
               content: crawlResult.data.content || '',
               metadata: crawlResult.data.metadata
             };
           } else {
-            console.warn(`Failed to scrape ${formattedTarget}:`, crawlResult.error);
+            console.warn(`Failed to scrape ${target}:`, crawlResult.error);
             return null;
           }
         } catch (error) {
@@ -53,23 +77,17 @@ export class WebScraperService {
           return null;
         }
       });
-
-      // Wait for all promises in this batch to resolve
       const batchResults = await Promise.all(batchPromises);
-
-      // Add successful results
       for (const result of batchResults) {
         if (result) {
           results.push(result);
         }
       }
-
-      // Add a small delay between batches to avoid rate limiting
+      // Add delay between batches to avoid rate limiting
       if (batches.length > 1) {
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
-
     console.log(`Completed scraping. Found ${results.length} results.`);
     return results;
   }
