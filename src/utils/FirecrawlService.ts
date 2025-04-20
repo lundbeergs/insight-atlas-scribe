@@ -28,6 +28,23 @@ export class FirecrawlService {
     return localStorage.getItem(this.API_KEY_STORAGE_KEY);
   }
 
+  static async testApiKey(apiKey: string): Promise<boolean> {
+    try {
+      console.log('Testing Firecrawl API key...');
+      const app = new FirecrawlApp({ apiKey });
+      
+      // A simple test crawl to verify the API key
+      const testResponse = await app.crawlUrl('https://example.com', {
+        limit: 1
+      });
+      
+      return testResponse.success === true;
+    } catch (error) {
+      console.error('Error testing Firecrawl API key:', error);
+      return false;
+    }
+  }
+
   static async crawlWebsite(url: string): Promise<{ success: boolean; data?: any; error?: string }> {
     const apiKey = this.getApiKey();
     if (!apiKey) {
@@ -35,14 +52,24 @@ export class FirecrawlService {
     }
 
     try {
+      console.log(`Initiating crawl for URL: ${url}`);
       if (!this.firecrawlApp) {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
-        limit: 3,
+      // Use proper URL format checking
+      let targetUrl = url;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        targetUrl = `https://${url}`;
+        console.log(`Adjusted URL to: ${targetUrl}`);
+      }
+
+      const crawlResponse = await this.firecrawlApp.crawlUrl(targetUrl, {
+        limit: 5, // Limit to 5 pages per domain for efficiency
         scrapeOptions: {
           formats: ['markdown', 'html'],
+          followLinks: true,
+          maxDepth: 2
         }
       }) as CrawlResponse;
 
@@ -54,6 +81,7 @@ export class FirecrawlService {
         };
       }
 
+      console.log('Crawl successful for:', targetUrl);
       return { 
         success: true,
         data: {
