@@ -42,7 +42,7 @@ export class FirecrawlService {
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
         limit: 3,
         scrapeOptions: {
-          formats: ['markdown', 'text'],
+          formats: ['markdown', 'html'],
         }
       }) as CrawlResponse;
 
