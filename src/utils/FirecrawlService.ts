@@ -67,8 +67,7 @@ export class FirecrawlService {
       const crawlResponse = await this.firecrawlApp.crawlUrl(targetUrl, {
         limit: 5, // Limit to 5 pages per domain for efficiency
         scrapeOptions: {
-          formats: ['markdown', 'html'],
-          maxDepth: 2
+          formats: ['markdown', 'html']
         }
       }) as CrawlResponse;
 
