@@ -1,17 +1,15 @@
-
 import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { createPlannerResponse } from "@/services/planner";
 import ResearchPlan from "@/components/ResearchPlan";
-import { Loader2, Search, RefreshCw, AlertCircle } from "lucide-react";
 import ApiKeyManager from "@/components/ApiKeyManager";
 import { WebScraperService, ScrapingResult } from "@/services/webScraperService";
 import { FirecrawlService } from "@/utils/FirecrawlService";
-import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
+import ResearchForm from "@/components/research/ResearchForm";
+import ResearchProgress from "@/components/research/ResearchProgress";
+import ResearchResults from "@/components/research/ResearchResults";
+import ResearchIterations from "@/components/research/ResearchIterations";
 
 interface PlannerResponse {
   intent: string;
@@ -232,177 +230,60 @@ const ResearchPage = () => {
         <ApiKeyManager />
       </div>
       
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Research Question</CardTitle>
-          <CardDescription>
-            Enter a free-form research question about competitors, market trends, or product information.
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent>
-            <Textarea
-              placeholder="e.g., What is Competitor X's recent event presence? or Which of their products overlap with ours?"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              className="min-h-32"
-            />
-          </CardContent>
-          <CardFooter className="flex justify-end">
-            <Button type="submit" disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating Plan...
-                </>
-              ) : (
-                "Generate Research Plan"
-              )}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
+      <ResearchForm
+        question={question}
+        loading={loading}
+        onQuestionChange={setQuestion}
+        onSubmit={handleSubmit}
+      />
 
       {plannerResponse && (
         <div className="space-y-6">
           <ResearchPlan plan={plannerResponse} />
           
           <div className="flex justify-center">
-            {currentIteration === 0 ? (
-              <Button 
-                onClick={executeResearch}
-                disabled={isResearching}
-                size="lg"
-                className="mt-4"
-              >
-                {isResearching ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Executing Research...
-                  </>
-                ) : (
-                  <>
-                    <Search className="mr-2 h-5 w-5" />
-                    Execute Research Plan
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button 
-                onClick={continueResearch}
-                disabled={isResearching}
-                size="lg"
-                className="mt-4"
-                variant="outline"
-              >
-                {isResearching ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Continuing Research...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="mr-2 h-5 w-5" />
-                    Continue Research (Iteration {currentIteration + 1}/3)
-                  </>
-                )}
-              </Button>
-            )}
+            <Button 
+              onClick={currentIteration === 0 ? executeResearch : continueResearch}
+              disabled={isResearching}
+              size="lg"
+              className="mt-4"
+              variant={currentIteration === 0 ? "default" : "outline"}
+            >
+              {isResearching ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  {currentIteration === 0 ? "Executing Research..." : "Continuing Research..."}
+                </>
+              ) : (
+                <>
+                  {currentIteration === 0 ? (
+                    <>
+                      <Search className="mr-2 h-5 w-5" />
+                      Execute Research Plan
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-5 w-5" />
+                      Continue Research (Iteration {currentIteration + 1}/3)
+                    </>
+                  )}
+                </>
+              )}
+            </Button>
           </div>
           
-          {isResearching && (
-            <div className="mt-4">
-              <div className="flex justify-between mb-2 text-sm">
-                <span>Research Progress</span>
-                <span>{researchProgress}%</span>
-              </div>
-              <Progress value={researchProgress} className="h-2" />
-              <div className="mt-2 text-center text-sm text-muted-foreground">
-                {isReasoning ? 
-                  "AI is analyzing results and improving search strategies..." : 
-                  "Collecting data from target sources..."}
-              </div>
-            </div>
-          )}
+          <ResearchProgress 
+            isResearching={isResearching}
+            isReasoning={isReasoning}
+            progress={researchProgress}
+          />
           
-          {analysisText && (
-            <Card className="mt-4 border-yellow-200 bg-yellow-50 dark:bg-yellow-950 dark:border-yellow-800">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-md flex items-center">
-                  <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400" />
-                  AI Research Analysis
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">{analysisText}</p>
-              </CardContent>
-            </Card>
-          )}
+          <ResearchResults 
+            results={researchResults}
+            analysisText={analysisText}
+          />
           
-          {iterations.length > 0 && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle>Research Process</CardTitle>
-                <CardDescription>
-                  Showing {iterations.length} research iterations with a total of {researchResults.length} results.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  {iterations.map((iteration, idx) => (
-                    <div key={idx} className="border rounded-lg p-4">
-                      <h3 className="font-medium text-lg mb-2">Iteration {idx + 1}</h3>
-                      
-                      <div className="mb-4">
-                        <h4 className="font-medium text-sm text-muted-foreground mb-1">Search Targets:</h4>
-                        <ul className="list-disc list-inside space-y-1 text-sm">
-                          {iteration.targets.map((target, targetIdx) => (
-                            <li key={targetIdx}>{target}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      
-                      {iteration.extractionFocus && (
-                        <div className="mb-4 bg-slate-50 dark:bg-slate-900 p-3 rounded">
-                          <h4 className="font-medium text-sm mb-1">Focus Areas:</h4>
-                          <p className="text-sm">{iteration.extractionFocus}</p>
-                        </div>
-                      )}
-                      
-                      <div>
-                        <h4 className="font-medium text-sm text-muted-foreground mb-1">
-                          Results Found: {iteration.results.length}
-                        </h4>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          
-          {researchResults.length > 0 && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle>Research Results</CardTitle>
-                <CardDescription>
-                  Found {researchResults.length} relevant sources
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {researchResults.map((result, index) => (
-                    <div key={index} className="border p-4 rounded-lg">
-                      <h3 className="font-medium text-lg">Source: {result.url}</h3>
-                      <div className="mt-2 overflow-auto max-h-60 text-sm">
-                        <pre className="whitespace-pre-wrap">{result.content}</pre>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <ResearchIterations iterations={iterations} />
         </div>
       )}
     </div>
