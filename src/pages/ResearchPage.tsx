@@ -10,6 +10,8 @@ import ResearchForm from "@/components/research/ResearchForm";
 import ResearchProgress from "@/components/research/ResearchProgress";
 import ResearchResults from "@/components/research/ResearchResults";
 import ResearchIterations from "@/components/research/ResearchIterations";
+import { Button } from "@/components/ui/button";
+import { Loader2, Search, RefreshCw } from "lucide-react";
 
 interface PlannerResponse {
   intent: string;
