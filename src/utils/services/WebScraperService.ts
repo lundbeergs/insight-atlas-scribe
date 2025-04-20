@@ -1,21 +1,7 @@
-
 import { FirecrawlCore } from './FirecrawlCore';
 
-interface ErrorResponse {
-  success: false;
-  error: string;
-}
-
-interface CrawlStatusResponse {
-  success: true;
-  content: string;
-  metadata: Record<string, any>;
-}
-
-type CrawlResponse = CrawlStatusResponse | ErrorResponse;
-
 export class WebScraperService {
-  private static requestCache = new Map<string, CrawlResponse>();
+  private static requestCache = new Map<string, any>();
   private static recentRequests: { timestamp: number; url: string }[] = [];
   private static MAX_CONCURRENT_REQUESTS = 3;
   private static RATE_LIMIT_WINDOW = 60000;
@@ -73,7 +59,7 @@ export class WebScraperService {
       
       if (this.requestCache.has(targetUrl)) {
         console.log(`Using cached result for ${targetUrl}`);
-        const cachedResponse = this.requestCache.get(targetUrl) as CrawlResponse;
+        const cachedResponse = this.requestCache.get(targetUrl);
         return this.processResponse(cachedResponse);
       }
       
@@ -86,34 +72,34 @@ export class WebScraperService {
       
       this.recentRequests.push({ timestamp: Date.now(), url: targetUrl });
 
-      // Updated according to Firecrawl API documentation
-      // https://docs.firecrawl.dev/api-reference/endpoint/crawl-post
       const crawlResponse = await client.crawlUrl(targetUrl, {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          includeSelectors: [
-            'article',
-            'main',
-            '.content',
-            '.post',
-            '.article',
-            'h1, h2, h3',
-            'p',
-            'ul, ol',
-            'table'
-          ],
-          excludeSelectors: [
-            'nav',
-            'header',
-            'footer',
-            '.sidebar',
-            '.ads',
-            '.cookie-notice',
-            '.social-share'
-          ]
+          selectors: {
+            include: [
+              'article',
+              'main',
+              '.content',
+              '.post',
+              '.article',
+              'h1, h2, h3',
+              'p',
+              'ul, ol',
+              'table'
+            ],
+            exclude: [
+              'nav',
+              'header',
+              'footer',
+              '.sidebar',
+              '.ads',
+              '.cookie-notice',
+              '.social-share'
+            ]
+          }
         }
-      }) as CrawlResponse;
+      });
       
       this.requestCache.set(targetUrl, crawlResponse);
       return this.processResponse(crawlResponse);
@@ -126,12 +112,12 @@ export class WebScraperService {
     }
   }
 
-  private static processResponse(response: CrawlResponse): { success: boolean; data?: any; error?: string } {
+  private static processResponse(response: any): { success: boolean; data?: any; error?: string } {
     if (!response.success) {
-      console.error('Crawl failed:', (response as ErrorResponse).error);
+      console.error('Crawl failed:', response.error);
       return { 
         success: false, 
-        error: (response as ErrorResponse).error || 'Failed to crawl website' 
+        error: response.error || 'Failed to crawl website' 
       };
     }
 

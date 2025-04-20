@@ -1,20 +1,12 @@
 
 import { FirecrawlCore } from './FirecrawlCore';
 
-interface ExtractResponse {
-  success: boolean;
-  data?: Record<string, any>;
-  error?: string;
-}
-
 export class DataExtractionService {
-  static async extractStructuredData(url: string, schema: Record<string, any>[]): Promise<ExtractResponse> {
+  static async extractStructuredData(url: string, schema: any[]): Promise<any> {
     try {
       console.log(`Extracting structured data from: ${url}`);
       const client = FirecrawlCore.getClient();
 
-      // Pass an array of URLs as required by the Firecrawl API
-      // https://docs.firecrawl.dev/api-reference/endpoint/extract
       const extractResult = await client.extract([url], {
         schema
       });
@@ -39,3 +31,4 @@ export class DataExtractionService {
     }
   }
 }
+

@@ -1,44 +1,30 @@
 
 import { FirecrawlCore } from './FirecrawlCore';
 
-interface SearchResult {
-  url: string;
-  title: string;
-  snippet: string;
-}
-
-interface SearchResponse {
-  success: boolean;
-  results?: SearchResult[];
-  error?: string;
-}
-
 export class SearchService {
-  static async search(query: string, options: { limit?: number } = {}): Promise<SearchResponse> {
+  static async search(query: string, options: { limit?: number } = {}): Promise<any> {
     try {
       console.log(`Searching for: ${query}`);
       const client = FirecrawlCore.getClient();
 
-      // According to docs: https://docs.firecrawl.dev/api-reference/endpoint/search
       const searchResponse = await client.search(query, {
         limit: options.limit || 5
       });
 
-      if (searchResponse && typeof searchResponse === 'object' && searchResponse.success === true) {
-        let searchResults: SearchResult[] = [];
+      if (searchResponse && searchResponse.success === true) {
+        let results = [];
         
         if (Array.isArray(searchResponse.data)) {
-          // Map according to the Firecrawl API response format
-          searchResults = searchResponse.data.map(item => ({
+          results = searchResponse.data.map(item => ({
             url: item.url || '',
             title: item.title || '',
-            snippet: item.description || '' // Firecrawl returns 'description' not 'snippet'
+            snippet: item.description || ''
           }));
         }
         
         return {
           success: true,
-          results: searchResults
+          results
         };
       }
       
@@ -55,3 +41,4 @@ export class SearchService {
     }
   }
 }
+
