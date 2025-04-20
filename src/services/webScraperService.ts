@@ -8,60 +8,74 @@ export interface ScrapingResult {
 }
 
 export class WebScraperService {
-  static async scrapeSearchTargets(searchTargets: string[]): Promise<ScrapingResult[]> {
+  private static async processBatch(
+    batch: string[], 
+    onProgress?: (completed: number, total: number) => void
+  ): Promise<ScrapingResult[]> {
+    const results: ScrapingResult[] = [];
+    const total = batch.length;
+    
+    for (let i = 0; i < batch.length; i++) {
+      try {
+        const target = batch[i];
+        console.log(`Processing target ${i + 1}/${total}: ${target}`);
+        
+        const apiKey = FirecrawlService.getApiKey();
+        if (!apiKey) {
+          console.warn('No FireCrawl API key found. Please set your API key in the settings.');
+          continue;
+        }
+
+        const crawlResult = await FirecrawlService.crawlWebsite(target);
+        
+        if (crawlResult.success && crawlResult.data) {
+          console.log(`Successfully processed ${target}`);
+          results.push({
+            url: target,
+            content: crawlResult.data.content || '',
+            metadata: crawlResult.data.metadata
+          });
+        } else {
+          console.warn(`Failed to process ${target}:`, crawlResult.error);
+        }
+        
+        onProgress?.(i + 1, total);
+      } catch (error) {
+        console.error(`Error processing ${batch[i]}:`, error);
+      }
+    }
+    
+    return results;
+  }
+
+  static async scrapeSearchTargets(
+    searchTargets: string[],
+    onProgress?: (completed: number, total: number) => void
+  ): Promise<ScrapingResult[]> {
     const results: ScrapingResult[] = [];
     console.log('Starting to scrape search targets:', searchTargets);
 
-    // Process targets in parallel but with limitations to avoid overloading
-    const maxConcurrent = 2; // Limit based on FireCrawl plan
+    // Process targets in batches of 3 (increased from 2)
+    const batchSize = 3;
     const batches = [];
     
-    // Create batches of max concurrent requests
-    for (let i = 0; i < searchTargets.length; i += maxConcurrent) {
-      batches.push(searchTargets.slice(i, i + maxConcurrent));
+    for (let i = 0; i < searchTargets.length; i += batchSize) {
+      batches.push(searchTargets.slice(i, i + batchSize));
     }
+    
+    let processedCount = 0;
+    const totalTargets = searchTargets.length;
     
     for (const batch of batches) {
       console.log(`Processing batch of ${batch.length} targets`);
       
-      // Process this batch in parallel
-      const batchPromises = batch.map(async (target) => {
-        try {
-          const apiKey = FirecrawlService.getApiKey();
-          if (!apiKey) {
-            console.warn('No FireCrawl API key found. Please set your API key in the settings.');
-            return null;
-          }
-
-          console.log(`Scraping target: ${target}`);
-          const crawlResult = await FirecrawlService.crawlWebsite(target);
-          
-          if (crawlResult.success && crawlResult.data) {
-            console.log(`Successfully scraped ${target}`);
-            return {
-              url: target,
-              content: crawlResult.data.content || '',
-              metadata: crawlResult.data.metadata
-            };
-          } else {
-            console.warn(`Failed to scrape ${target}:`, crawlResult.error);
-            return null;
-          }
-        } catch (error) {
-          console.error(`Error scraping ${target}:`, error);
-          return null;
-        }
+      const batchResults = await this.processBatch(batch, (batchCompleted, batchTotal) => {
+        const totalCompleted = processedCount + batchCompleted;
+        onProgress?.(totalCompleted, totalTargets);
       });
       
-      // Wait for all promises in this batch to resolve
-      const batchResults = await Promise.all(batchPromises);
-      
-      // Add successful results
-      for (const result of batchResults) {
-        if (result) {
-          results.push(result);
-        }
-      }
+      results.push(...batchResults);
+      processedCount += batch.length;
       
       // Add a small delay between batches to avoid rate limiting
       if (batches.length > 1) {

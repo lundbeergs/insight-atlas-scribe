@@ -1,4 +1,3 @@
-
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -19,7 +18,9 @@ export class FirecrawlService {
   private static firecrawlApp: FirecrawlApp | null = null;
   private static requestCache = new Map<string, CrawlResponse>();
   private static recentRequests: { timestamp: number; url: string }[] = [];
-  private static MAX_CONCURRENT_REQUESTS = 2; // Limit based on plan
+  private static MAX_CONCURRENT_REQUESTS = 3; // Increased from 2
+  private static RATE_LIMIT_WINDOW = 60000; // 60 seconds
+  private static PAGE_LIMIT = 10; // Increased from 5
 
   static saveApiKey(apiKey: string): void {
     localStorage.setItem(this.API_KEY_STORAGE_KEY, apiKey);
@@ -35,12 +36,9 @@ export class FirecrawlService {
     try {
       console.log('Testing Firecrawl API key...');
       const app = new FirecrawlApp({ apiKey });
-      
-      // A simple test crawl to verify the API key
       const testResponse = await app.crawlUrl('https://example.com', {
         limit: 1
       });
-      
       return testResponse.success === true;
     } catch (error) {
       console.error('Error testing Firecrawl API key:', error);
@@ -62,26 +60,38 @@ export class FirecrawlService {
       return input;
     }
     
-    // If it has a domain-like structure, add https://
-    if (input.includes('.com') || input.includes('.org') || input.includes('.net') || 
-        input.includes('.edu') || input.includes('.gov')) {
+    // Handle domain-like strings
+    if (input.match(/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$/)) {
       return `https://${input}`;
     }
     
-    // For search queries, encode them properly
-    return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+    // Handle paths that might be missing protocol
+    if (input.includes('/') && !input.startsWith('http')) {
+      return `https://${input}`;
+    }
+    
+    // For search queries, use a more targeted approach
+    if (input.toLowerCase().includes('site:')) {
+      // Keep site: operator intact
+      return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+    }
+    
+    // Add site: operator for better targeting when searching
+    const enhancedQuery = `${input} site:.com OR site:.org OR site:.gov OR site:.edu`;
+    return `https://www.google.com/search?q=${encodeURIComponent(enhancedQuery)}`;
   }
 
   private static enforceRateLimit(): boolean {
-    // Clean up requests older than 60 seconds
     const now = Date.now();
+    
+    // Clean up old requests
     this.recentRequests = this.recentRequests.filter(
-      req => now - req.timestamp < 60000
+      req => now - req.timestamp < this.RATE_LIMIT_WINDOW
     );
     
-    // Check if we're at the concurrent request limit
+    // Check concurrent request limit
     if (this.recentRequests.length >= this.MAX_CONCURRENT_REQUESTS) {
-      console.warn('Rate limit reached for Firecrawl API. Try again later.');
+      console.warn(`Rate limit reached (${this.MAX_CONCURRENT_REQUESTS} requests per ${this.RATE_LIMIT_WINDOW/1000}s)`);
       return false;
     }
     
@@ -100,36 +110,21 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Format URL properly
       const targetUrl = this.formatUrl(url);
       console.log(`Processed URL for crawling: ${targetUrl}`);
       
-      // Check cache first
+      // Check cache
       if (this.requestCache.has(targetUrl)) {
         console.log(`Using cached result for ${targetUrl}`);
         const cachedResponse = this.requestCache.get(targetUrl) as CrawlResponse;
-        
-        if (!cachedResponse.success) {
-          return { 
-            success: false, 
-            error: (cachedResponse as ErrorResponse).error || 'Failed to crawl website (cached result)' 
-          };
-        }
-        
-        return { 
-          success: true,
-          data: {
-            content: (cachedResponse as CrawlStatusResponse).content,
-            metadata: (cachedResponse as CrawlStatusResponse).metadata
-          }
-        };
+        return this.processResponse(cachedResponse);
       }
       
       // Check rate limit
       if (!this.enforceRateLimit()) {
         return { 
           success: false, 
-          error: 'Rate limit reached. Try again in a minute.' 
+          error: 'Rate limit reached. Please wait before trying again.' 
         };
       }
       
@@ -137,31 +132,39 @@ export class FirecrawlService {
       this.recentRequests.push({ timestamp: Date.now(), url: targetUrl });
 
       const crawlResponse = await this.firecrawlApp.crawlUrl(targetUrl, {
-        limit: 5, // Limit to 5 pages per domain for efficiency
+        limit: this.PAGE_LIMIT,
         scrapeOptions: {
-          formats: ['markdown', 'html']
+          formats: ['markdown', 'html'],
+          extractMetadata: true,
+          followLinks: true,
+          maxDepth: 2,
+          includeSelectors: [
+            'article',
+            'main',
+            '.content',
+            '.post',
+            '.article',
+            'h1, h2, h3',
+            'p',
+            'ul, ol',
+            'table'
+          ],
+          excludeSelectors: [
+            'nav',
+            'header',
+            'footer',
+            '.sidebar',
+            '.ads',
+            '.cookie-notice',
+            '.social-share'
+          ]
         }
       }) as CrawlResponse;
       
       // Cache the response
       this.requestCache.set(targetUrl, crawlResponse);
-
-      if (!crawlResponse.success) {
-        console.error('Crawl failed:', (crawlResponse as ErrorResponse).error);
-        return { 
-          success: false, 
-          error: (crawlResponse as ErrorResponse).error || 'Failed to crawl website' 
-        };
-      }
-
-      console.log('Crawl successful for:', targetUrl);
-      return { 
-        success: true,
-        data: {
-          content: crawlResponse.content,
-          metadata: crawlResponse.metadata
-        }
-      };
+      
+      return this.processResponse(crawlResponse);
     } catch (error) {
       console.error('Error during crawl:', error);
       return { 
@@ -169,5 +172,24 @@ export class FirecrawlService {
         error: error instanceof Error ? error.message : 'Failed to connect to Firecrawl API' 
       };
     }
+  }
+
+  private static processResponse(response: CrawlResponse): { success: boolean; data?: any; error?: string } {
+    if (!response.success) {
+      console.error('Crawl failed:', (response as ErrorResponse).error);
+      return { 
+        success: false, 
+        error: (response as ErrorResponse).error || 'Failed to crawl website' 
+      };
+    }
+
+    console.log('Crawl successful');
+    return { 
+      success: true,
+      data: {
+        content: response.content,
+        metadata: response.metadata
+      }
+    };
   }
 }
