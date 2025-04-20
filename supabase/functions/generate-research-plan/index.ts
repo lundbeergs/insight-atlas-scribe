@@ -26,6 +26,40 @@ serve(async (req) => {
     }
 
     const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const previousYear = new Date();
+    previousYear.setFullYear(previousYear.getFullYear() - 1);
+    const previousYearStr = previousYear.toISOString().split('T')[0];
+
+    // Enhanced system prompt for specificity/context/sources/date
+    const prompt = `You are a research planning assistant that helps break down research questions into actionable components.
+
+Your job is to analyze a research question and create a structured plan with:
+1. Intent: A concise summary of what the user wants to know.
+2. Search Focus: A detailed list of highly specific search queries and direct sites that will yield comprehensive results. Always include:
+    a. Industry context and domains (e.g., "PKI", "HID Global competitor analysis").
+    b. Add targeted website domains for industry (conference directories, event sites, company news, etc).
+    c. Append explicit date ranges (e.g., "2024", or "${previousYearStr} to ${currentDate}") to queries for time relevance.
+    d. Build queries so that at least half are formatted as direct site:domain.com or event directory URLs (not just Google search terms).
+    e. No more than 3 queries should be broad Google queries—prefer direct sources.
+    f. Always ensure a minimum of 7-8 unique, context-rich, and date-scoped queries for comprehensive results.
+3. Information Goals: What specific information the user is trying to obtain (summarized by you).
+4. Original Question: The exact question for reference.
+5. Context: Research context, dates, domain, industry, company names, etc for better search relevance.
+
+Today's date is: ${currentDate}.
+For current events or trends, use the past year (${previousYearStr} to ${currentDate}) as the default window unless otherwise stated.
+
+FORMAT your response as a single JSON object with these keys:
+{
+  "intent": "string",
+  "searchFocus": ["string", "string", ...],
+  "informationGoals": ["string", ...],
+  "originalQuestion": "string",
+  "context": "string"
+}
+
+Make your plan thorough, focused, and always cover the most relevant industry and date-specific targets.
+`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -38,33 +72,7 @@ serve(async (req) => {
         messages: [
           { 
             role: 'system', 
-            content: `You are a research planning assistant that helps break down research questions into actionable components.
-            
-            Your job is to analyze a research question and create a structured plan with:
-            
-            1. Intent: A concise summary of what the user wants to know
-            2. Search Focus: A detailed list of specific search queries that will yield comprehensive results.
-               For tech industry research, include industry-specific sites, forums, and event directories.
-               For competitive analysis, include specific industry sources and company names.
-               For event research, include conference sites, industry events, and dates.
-            3. Information Goals: What specific information the user is trying to obtain
-            4. Original Question: The exact question for reference
-            5. Context: Research context, dates, and domain information for better search relevance
-            
-            Today's date is: ${currentDate}
-            
-            Format your response as a JSON object with these keys:
-            {
-              "intent": "string",
-              "searchFocus": ["string", "string"],
-              "informationGoals": ["string", "string"],
-              "originalQuestion": "string",
-              "context": "string"
-            }
-            
-            Make your plan thorough but focused on the most relevant aspects of the question.
-            When creating search queries, be very specific and add date ranges when relevant.
-            Add at least 5-8 search focus items to ensure comprehensive coverage.` 
+            content: prompt
           },
           { role: 'user', content: question + (context ? `\n\nAdditional context: ${context}` : '') }
         ],

@@ -42,7 +42,36 @@ serve(async (req) => {
     
     console.log(`Underperforming queries: ${JSON.stringify(underperformingQueries)}`);
 
-    // Analyze existing results and generate better search targets
+    // --- ENHANCED ANALYSIS PROMPT for info goals+context+dates ---
+    const now = new Date();
+    const previousYear = new Date(now);
+    previousYear.setFullYear(now.getFullYear() - 1);
+    const dateStr = `${previousYear.toISOString().split("T")[0]} to ${now.toISOString().split("T")[0]}`;
+
+    const aiPrompt = `You are an expert research assistant that helps refine web search strategies.
+
+Your task:
+1. Evaluate and analyze current research results (if any), research goals, search targets, and domain context.
+2. Identify information gaps and insufficient targets (especially those with <3 results).
+3. Generate 7-9 improved, highly specific search targets that:
+   - Mix direct URLs (industry/event/company sites) and search queries (date/context aware)
+   - For event research or competitive analysis, prioritize tech event directories, conference calendars, company/news/press sites, and add context like "PKI", "HID Global", and "2024" or "${dateStr}".
+   - Provide at least 4 direct site URLs and at least 2 with date filter ("2024" or date context).
+   - Prefer non-google.com sources.
+   - For each improved target, indicate if it's: ["URL", "industry-site", "event-directory", "search-query"], and include context and date in queries.
+4. Use information goals to focus improved targets on the specific gaps found so far.
+
+Respond as JSON:
+{
+  "analysis": "paragraph analyzing the current state and gaps",
+  "improvedTargets": ["target1", ...],
+  "targetTypes": ["type-for-target-1", ...],
+  "searchPriority": ["high", "high", ...],
+  "extractionFocus": "summary of important info to extract for this iteration",
+  "industrySpecificSites": ["site1", ...]
+}
+`;
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -54,33 +83,7 @@ serve(async (req) => {
         messages: [
           { 
             role: 'system', 
-            content: `You are an expert research assistant that helps refine web search strategies.
-            
-            Your task is to analyze current research results (if any), research goals, and current search targets.
-            Then generate improved search targets that are more likely to yield relevant information.
-            
-            You should:
-            1. Evaluate the quality and relevance of current results
-            2. Identify gaps in the information collected
-            3. Create improved search targets, especially for queries with insufficient results
-            4. Add highly specific industry sources and event directories relevant to the domain
-            5. Convert broad queries into direct website URLs when possible
-            
-            Format as a JSON with:
-            {
-              "analysis": "A paragraph analyzing the current state and gaps",
-              "improvedTargets": ["target1", "target2", ...],
-              "searchPriority": ["high", "medium", "medium", ...] (matching the targets array),
-              "extractionFocus": "What to look for in these sources",
-              "industrySpecificSites": ["site1", "site2",...] (domain-specific sites to check)
-            }
-            
-            MAKE SURE that all search targets have proper URL format or are specific search queries.
-            For tech industry research, be sure to include specific event directories, conference websites, and industry forums.
-            Add context (dates, industry terms) to search queries to improve relevance.
-            Include at least 5-8 improved targets focusing on queries that didn't yield good results before.
-            
-            For underperforming queries, create variations that might yield better results.`
+            content: aiPrompt
           },
           { 
             role: 'user', 
@@ -100,86 +103,100 @@ serve(async (req) => {
 
     const responseData = await response.json();
     const refinementResults = JSON.parse(responseData.choices[0].message.content);
-    
-    // If we have improved targets, try to crawl them
+
+    // Up to 5 improved targets, always crawl direct URLs, prefer industry/event sites
     if (refinementResults.improvedTargets && refinementResults.improvedTargets.length > 0) {
-      // Get all high priority targets (up to 5)
-      const highPriorityTargets = [];
-      if (refinementResults.searchPriority) {
+      // Prefer URLs/domains, then search queries, process up to 5
+      let priorityTargets = [];
+      let count = 0;
+      for (let i = 0; i < refinementResults.improvedTargets.length; i++) {
+        const type = refinementResults.targetTypes?.[i] || "";
+        if (["URL","industry-site","event-directory"].includes(type) && count < 5) {
+          priorityTargets.push(refinementResults.improvedTargets[i]);
+          count++;
+        }
+      }
+      // Fill remainder with search queries, if needed
+      if (priorityTargets.length < 5) {
         for (let i = 0; i < refinementResults.improvedTargets.length; i++) {
-          if (refinementResults.searchPriority[i] === 'high' && highPriorityTargets.length < 5) {
-            highPriorityTargets.push(refinementResults.improvedTargets[i]);
+          if (!priorityTargets.includes(refinementResults.improvedTargets[i]) && priorityTargets.length < 5) {
+            priorityTargets.push(refinementResults.improvedTargets[i]);
           }
         }
       }
-      
-      // If no high priority targets, just take the first 5
-      const priorityTargets = highPriorityTargets.length > 0 
-        ? highPriorityTargets 
-        : refinementResults.improvedTargets.slice(0, 5);
-      
+
       // Crawl the new targets
       const newResults = [];
-      
       for (const target of priorityTargets) {
         try {
-          // Process each target as a URL or convert search query to appropriate URL
           let processedUrl = target;
-          
-          // If it's not already a URL, try to format it appropriately
-          if (!target.startsWith('http://') && !target.startsWith('https://')) {
-            if (target.includes('.com') || target.includes('.org') || target.includes('.net') || 
-                target.includes('.edu') || target.includes('.gov')) {
-              processedUrl = `https://${target}`;
-            } else {
-              // For non-URL targets, try to use SerpAPI first
-              if (SerpApiService.getApiKey()) {
-                try {
-                  const serpUrls = await SerpApiService.getTopSearchUrls(target, 5);
-                  if (serpUrls.length > 0) {
-                    // Process each URL from SerpAPI
-                    for (const serpUrl of serpUrls) {
-                      console.log(`Crawling SerpAPI result: ${serpUrl}`);
-                      const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
-                        method: 'POST',
-                        headers: {
-                          'Authorization': `Bearer ${firecrawlAPIKey}`,
-                          'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                          url: serpUrl,
-                          limit: 5,
-                          scrapeOptions: {
-                            formats: ['markdown', 'html']
-                          }
-                        })
-                      });
-                      
-                      const crawlResultJson = await crawlResult.json();
-                      
-                      if (crawlResultJson.success) {
-                        newResults.push({
-                          url: serpUrl,
-                          content: crawlResultJson.content || '',
-                          metadata: crawlResultJson.metadata || {},
-                          searchQuery: target
-                        });
-                        console.log(`Successfully crawled ${serpUrl}`);
-                      }
-                      
-                      // Small delay between crawls
-                      await new Promise(resolve => setTimeout(resolve, 1000));
-                    }
-                    // Continue to next target after processing all SerpAPI results
-                    continue;
+          // Direct site/URL? make sure protocol
+          if ((target.includes('.com') || target.includes('.org') || target.includes('.net') || 
+               target.includes('.edu') || target.includes('.gov')) && !target.startsWith('http')) {
+            processedUrl = `https://${target}`;
+          }
+          // Not a URL? Try SerpAPI. Compose with context/date if needed
+          if (!processedUrl.startsWith("http")) {
+            // SerpAPI strategy for non-urls
+            // (optional: if SerpAPI available, get top URLs; otherwise skip query)
+            // For security, skip 'google.com' only links
+            const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
+            if (serpApiKey) {
+              const serpParams = new URLSearchParams({
+                engine: 'google',
+                q: `${processedUrl} ${context || ''} ${dateStr}`,
+                api_key: serpApiKey,
+                num: '5',
+              });
+              const serpUrl = `https://serpapi.com/search.json?${serpParams.toString()}`;
+              const serpRes = await fetch(serpUrl);
+              const serpData = await serpRes.json();
+              let serpLinks = [];
+              if (serpData.organic_results && Array.isArray(serpData.organic_results)) {
+                for (const result of serpData.organic_results.slice(0, 5)) {
+                  if (result.link && !result.link.startsWith("https://www.google.com")) {
+                    serpLinks.push(result.link);
                   }
-                } catch (err) {
-                  console.error(`SerpAPI error for ${target}:`, err);
+                }
+                // If too few, fill remainder with whatever else is there
+                if (serpLinks.length < 5) {
+                  for (const result of serpData.organic_results.slice(0, 5)) {
+                    if (result.link && !serpLinks.includes(result.link)) {
+                      serpLinks.push(result.link);
+                    }
+                  }
                 }
               }
-              
-              // If SerpAPI fails or is not available, skip this non-URL target
-              console.log(`Skipping non-URL target: ${target}`);
+              for (const serpLink of serpLinks) {
+                const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${firecrawlAPIKey}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    url: serpLink,
+                    limit: 5,
+                    scrapeOptions: {
+                      formats: ['markdown', 'html']
+                    }
+                  })
+                });
+                const crawlResultJson = await crawlResult.json();
+                if (crawlResultJson.success) {
+                  newResults.push({
+                    url: serpLink,
+                    content: crawlResultJson.content || '',
+                    metadata: crawlResultJson.metadata || {},
+                    searchQuery: target
+                  });
+                  console.log(`Successfully crawled ${serpLink}`);
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+              continue;
+            } else {
+              // No SerpAPI: skip non-url target
               continue;
             }
           }
@@ -195,15 +212,13 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               url: processedUrl,
-              limit: 5, // Increased from 3 to 5
+              limit: 5,
               scrapeOptions: {
                 formats: ['markdown', 'html']
               }
             })
           });
-          
           const crawlResultJson = await crawlResult.json();
-          
           if (crawlResultJson.success) {
             newResults.push({
               url: processedUrl,
@@ -218,24 +233,20 @@ serve(async (req) => {
         } catch (error) {
           console.error(`Error crawling ${target}:`, error);
         }
-        
-        // Add a small delay between requests to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
-      
-      // Process industry-specific sites if provided
+
+      // Also, process industry-specific sites if provided, up to 3
       if (refinementResults.industrySpecificSites && refinementResults.industrySpecificSites.length > 0) {
-        const industryTargets = refinementResults.industrySpecificSites.slice(0, 3); // Process up to 3 industry sites
-        
+        const industryTargets = refinementResults.industrySpecificSites.slice(0, 3);
         for (const target of industryTargets) {
           try {
             let processedUrl = target;
             if (!target.startsWith('http://') && !target.startsWith('https://')) {
               processedUrl = `https://${target}`;
             }
-            
+
             console.log(`Crawling industry-specific site: ${processedUrl}`);
-            
             const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
               method: 'POST',
               headers: {
@@ -250,9 +261,7 @@ serve(async (req) => {
                 }
               })
             });
-            
             const crawlResultJson = await crawlResult.json();
-            
             if (crawlResultJson.success) {
               newResults.push({
                 url: processedUrl,
@@ -265,16 +274,16 @@ serve(async (req) => {
           } catch (error) {
             console.error(`Error crawling industry site ${target}:`, error);
           }
-          
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
-      
+
       // Combine results with analysis
       return new Response(
         JSON.stringify({
           analysis: refinementResults.analysis,
           improvedTargets: refinementResults.improvedTargets,
+          targetTypes: refinementResults.targetTypes,
           searchPriority: refinementResults.searchPriority,
           extractionFocus: refinementResults.extractionFocus,
           industrySpecificSites: refinementResults.industrySpecificSites || [],
