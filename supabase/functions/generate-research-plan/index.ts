@@ -42,6 +42,8 @@ Your job is to analyze a research question and create a structured plan with:
     d. Build queries so that at least half are formatted as direct site:domain.com or event directory URLs (not just Google search terms).
     e. No more than 3 queries should be broad Google queries—prefer direct sources.
     f. Always ensure a minimum of 7-8 unique, context-rich, and date-scoped queries for comprehensive results.
+    g. Include specific URLs like "https://www.entrust.com/about/events/" if the site has a dedicated events page.
+    h. For event research, include conference directory sites like eventbrite.com, conferenceindex.org and industry conference sites.
 3. Information Goals: What specific information the user is trying to obtain (summarized by you).
 4. Original Question: The exact question for reference.
 5. Context: Research context, dates, domain, industry, company names, etc for better search relevance.

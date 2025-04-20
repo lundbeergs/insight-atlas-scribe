@@ -4,6 +4,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const firecrawlAPIKey = Deno.env.get('FIRECRAWL_API_KEY');
+const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -135,12 +136,10 @@ Respond as JSON:
                target.includes('.edu') || target.includes('.gov')) && !target.startsWith('http')) {
             processedUrl = `https://${target}`;
           }
+          
           // Not a URL? Try SerpAPI. Compose with context/date if needed
           if (!processedUrl.startsWith("http")) {
             // SerpAPI strategy for non-urls
-            // (optional: if SerpAPI available, get top URLs; otherwise skip query)
-            // For security, skip 'google.com' only links
-            const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
             if (serpApiKey) {
               const serpParams = new URLSearchParams({
                 engine: 'google',
@@ -159,7 +158,7 @@ Respond as JSON:
                   }
                 }
                 // If too few, fill remainder with whatever else is there
-                if (serpLinks.length < 5) {
+                if (serpLinks.length < 3) {
                   for (const result of serpData.organic_results.slice(0, 5)) {
                     if (result.link && !serpLinks.includes(result.link)) {
                       serpLinks.push(result.link);
@@ -167,7 +166,9 @@ Respond as JSON:
                   }
                 }
               }
-              for (const serpLink of serpLinks) {
+              
+              // Process each SerpAPI result URL
+              for (const serpLink of serpLinks.slice(0, 3)) {
                 const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
                   method: 'POST',
                   headers: {
@@ -178,30 +179,39 @@ Respond as JSON:
                     url: serpLink,
                     limit: 5,
                     scrapeOptions: {
-                      formats: ['markdown', 'html']
+                      formats: ['markdown', 'html'],
+                      selector: 'main, article, .content, #content, .main, #main' // Target content areas
                     }
                   })
                 });
                 const crawlResultJson = await crawlResult.json();
                 if (crawlResultJson.success) {
-                  newResults.push({
-                    url: serpLink,
-                    content: crawlResultJson.content || '',
-                    metadata: crawlResultJson.metadata || {},
-                    searchQuery: target
-                  });
-                  console.log(`Successfully crawled ${serpLink}`);
+                  // Validate content is useful
+                  if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+                    newResults.push({
+                      url: serpLink,
+                      content: crawlResultJson.content || '',
+                      metadata: crawlResultJson.metadata || {},
+                      searchQuery: target
+                    });
+                    console.log(`Successfully crawled ${serpLink}`);
+                  } else {
+                    console.log(`Content too short for ${serpLink}`);
+                  }
                 }
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
-              continue;
-            } else {
-              // No SerpAPI: skip non-url target
               continue;
             }
           }
           
           console.log(`Crawling target: ${processedUrl}`);
+          
+          // Skip google search URLs
+          if (processedUrl.startsWith('https://www.google.com/search')) {
+            console.log(`Skipping Google search URL: ${processedUrl}`);
+            continue;
+          }
           
           // Perform the crawl using FireCrawl directly
           const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
@@ -214,19 +224,25 @@ Respond as JSON:
               url: processedUrl,
               limit: 5,
               scrapeOptions: {
-                formats: ['markdown', 'html']
+                formats: ['markdown', 'html'],
+                selector: 'main, article, .content, #content, .main, #main' // Target content areas
               }
             })
           });
           const crawlResultJson = await crawlResult.json();
           if (crawlResultJson.success) {
-            newResults.push({
-              url: processedUrl,
-              content: crawlResultJson.content || '',
-              metadata: crawlResultJson.metadata || {},
-              searchQuery: target
-            });
-            console.log(`Successfully crawled ${processedUrl}`);
+            // Validate content length
+            if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+              newResults.push({
+                url: processedUrl,
+                content: crawlResultJson.content || '',
+                metadata: crawlResultJson.metadata || {},
+                searchQuery: target
+              });
+              console.log(`Successfully crawled ${processedUrl}`);
+            } else {
+              console.log(`Content too short for ${processedUrl}`);
+            }
           } else {
             console.error(`Failed to crawl ${processedUrl}:`, crawlResultJson.error);
           }
@@ -257,19 +273,25 @@ Respond as JSON:
                 url: processedUrl,
                 limit: 5,
                 scrapeOptions: {
-                  formats: ['markdown', 'html']
+                  formats: ['markdown', 'html'],
+                  selector: 'main, article, .content, #content, .main, #main' // Target content areas
                 }
               })
             });
             const crawlResultJson = await crawlResult.json();
             if (crawlResultJson.success) {
-              newResults.push({
-                url: processedUrl,
-                content: crawlResultJson.content || '',
-                metadata: crawlResultJson.metadata || {},
-                searchQuery: 'Industry-specific site'
-              });
-              console.log(`Successfully crawled industry site ${processedUrl}`);
+              // Only add if we have substantial content
+              if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+                newResults.push({
+                  url: processedUrl,
+                  content: crawlResultJson.content || '',
+                  metadata: crawlResultJson.metadata || {},
+                  searchQuery: 'Industry-specific site'
+                });
+                console.log(`Successfully crawled industry site ${processedUrl}`);
+              } else {
+                console.log(`Content too short for industry site ${processedUrl}`);
+              }
             }
           } catch (error) {
             console.error(`Error crawling industry site ${target}:`, error);

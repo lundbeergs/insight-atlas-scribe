@@ -48,30 +48,46 @@ export class FirecrawlService {
     }
   }
 
-  // Changed from private to public by removing the 'private' modifier
+  // Enhanced URL validation
   static isValidUrl(url: string): boolean {
     try {
       new URL(url);
+      // Additional check to prevent crawling Google search URLs
+      if (url.startsWith('https://www.google.com/search')) {
+        return false;
+      }
       return true;
     } catch {
       return false;
     }
   }
 
-  // Changed from private to public by removing the 'private' modifier
+  // Improved URL formatting with better domain detection
   static formatUrl(input: string): string {
-    if (this.isValidUrl(input)) {
+    // Already a valid URL with http/https
+    if (input.startsWith('http://') || input.startsWith('https://')) {
       return input;
     }
     
-    // If it has a domain-like structure, add https://
-    if (input.includes('.com') || input.includes('.org') || input.includes('.net') || 
-        input.includes('.edu') || input.includes('.gov')) {
+    // If it's a domain-like string, add https://
+    if (this.looksLikeDomain(input)) {
       return `https://${input}`;
     }
     
-    // For search queries, encode them properly
-    return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+    // Don't create Google search URLs as a fallback
+    // Instead return null to indicate this isn't a good URL to crawl
+    return "";
+  }
+  
+  // Helper to identify if a string looks like a domain
+  private static looksLikeDomain(input: string): boolean {
+    const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}/;
+    return domainPattern.test(input) || 
+           input.includes('.com') || 
+           input.includes('.org') || 
+           input.includes('.net') ||
+           input.includes('.edu') ||
+           input.includes('.gov');
   }
 
   private static enforceRateLimit(): boolean {
@@ -91,19 +107,31 @@ export class FirecrawlService {
   }
 
   static async crawlWebsite(url: string): Promise<{ success: boolean; error?: string; data?: any }> {
+    // Skip invalid URLs early
+    if (!url || !this.isValidUrl(url)) {
+      return { 
+        success: false, 
+        error: `Invalid URL: ${url || '(empty)'}` 
+      };
+    }
+    
     const apiKey = this.getApiKey();
     if (!apiKey) {
       return { success: false, error: 'API key not found' };
     }
 
     try {
-      console.log('Making crawl request to Firecrawl API');
+      console.log(`Making crawl request to Firecrawl API for: ${url}`);
       if (!this.firecrawlApp) {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
-        limit: 100 // Keep a reasonable limit for efficiency
+        limit: 100, // Keep a reasonable limit for efficiency
+        scrapeOptions: {
+          formats: ['markdown', 'html'],
+          selector: 'main, article, .content, #content, .main, #main' // Target content areas
+        }
       }) as CrawlResponse;
 
       if (!crawlResponse.success) {
@@ -114,7 +142,16 @@ export class FirecrawlService {
         };
       }
 
-      console.log('Crawl successful:', crawlResponse);
+      // Validate content is actually useful (not empty or too short)
+      if (!crawlResponse.content || crawlResponse.content.trim().length < 50) {
+        return {
+          success: false,
+          error: 'Retrieved content was too short or empty',
+          data: crawlResponse
+        };
+      }
+
+      console.log(`Crawl successful for ${url}, content length: ${crawlResponse.content.length} chars`);
       return { 
         success: true,
         data: crawlResponse 
