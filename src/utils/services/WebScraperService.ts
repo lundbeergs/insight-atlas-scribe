@@ -74,31 +74,27 @@ export class WebScraperService {
 
       const crawlResponse = await client.crawlUrl(targetUrl, {
         limit: this.PAGE_LIMIT,
-        scrapeOptions: {
-          formats: ['markdown', 'html'],
-          selectors: {
-            include: [
-              'article',
-              'main',
-              '.content',
-              '.post',
-              '.article',
-              'h1, h2, h3',
-              'p',
-              'ul, ol',
-              'table'
-            ],
-            exclude: [
-              'nav',
-              'header',
-              'footer',
-              '.sidebar',
-              '.ads',
-              '.cookie-notice',
-              '.social-share'
-            ]
-          }
-        }
+        formats: ['markdown', 'html'],
+        include: [
+          'article',
+          'main',
+          '.content',
+          '.post',
+          '.article',
+          'h1, h2, h3',
+          'p',
+          'ul, ol',
+          'table'
+        ],
+        exclude: [
+          'nav',
+          'header',
+          'footer',
+          '.sidebar',
+          '.ads',
+          '.cookie-notice',
+          '.social-share'
+        ]
       });
       
       this.requestCache.set(targetUrl, crawlResponse);
