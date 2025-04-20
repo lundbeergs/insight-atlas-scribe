@@ -11,7 +11,7 @@ export class SerpApiService {
     return localStorage.getItem(this.API_KEY_STORAGE_KEY);
   }
 
-  static async getTopSearchUrls(query: string, limit: number = 3): Promise<string[]> {
+  static async getTopSearchUrls(query: string, limit: number = 10): Promise<string[]> {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       throw new Error('SerpAPI key not found');

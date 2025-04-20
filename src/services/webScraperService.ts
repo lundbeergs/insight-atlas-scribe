@@ -5,89 +5,105 @@ export interface ScrapingResult {
   url: string;
   content: string;
   metadata?: Record<string, any>;
+  searchQuery?: string; // Track which search query produced this result
 }
 
 export class WebScraperService {
-  static async scrapeSearchTargets(searchTargets: string[]): Promise<ScrapingResult[]> {
+  static async scrapeSearchTargets(searchTargets: string[], researchContext?: string): Promise<ScrapingResult[]> {
     const results: ScrapingResult[] = [];
     console.log('Starting to scrape search targets (SerpAPI+Firecrawl):', searchTargets);
+    console.log('Research context:', researchContext);
 
     // First get the SerpAPI key (if not present, fallback to original logic)
     const serpApiKey = SerpApiService.getApiKey();
 
-    const maxConcurrent = 2; // Limit based on FireCrawl plan
-    const allTargets: string[] = [];
-
+    const maxConcurrent = 5; // Increased from 2 to 5 for better throughput
+    const urlsPerQuery = 10; // Increased from 3 to 10 for more comprehensive results
+    
+    // Process each search target separately to ensure thorough coverage
     for (const target of searchTargets) {
+      const targetUrls: string[] = [];
+      
       // If it's already a URL, use as-is
       if (FirecrawlService.isValidUrl(target)) {
-        allTargets.push(target);
+        targetUrls.push(target);
       } else if (serpApiKey) {
         // Otherwise, resolve via SerpAPI
         try {
-          const foundUrls = await SerpApiService.getTopSearchUrls(target, 3);
+          // Expand search with context if available
+          const searchQuery = researchContext ? 
+            `${target} ${researchContext}` : target;
+          
+          const foundUrls = await SerpApiService.getTopSearchUrls(searchQuery, urlsPerQuery);
           if (foundUrls.length) {
-            console.log(`SerpAPI found URLs for "${target}":`, foundUrls);
-            allTargets.push(...foundUrls);
+            console.log(`SerpAPI found ${foundUrls.length} URLs for "${target}":`, foundUrls);
+            targetUrls.push(...foundUrls);
           } else {
             // Fallback to Firecrawl's formatUrl if none found
-            allTargets.push(FirecrawlService.formatUrl(target));
+            targetUrls.push(FirecrawlService.formatUrl(target));
           }
         } catch (err) {
           console.error('Error with SerpAPI:', err);
           // Fallback to Firecrawl formatting
-          allTargets.push(FirecrawlService.formatUrl(target));
+          targetUrls.push(FirecrawlService.formatUrl(target));
         }
       } else {
         // No SerpApi key: fallback to Firecrawl formatUrl
-        allTargets.push(FirecrawlService.formatUrl(target));
+        targetUrls.push(FirecrawlService.formatUrl(target));
       }
-    }
+      
+      // Now process this batch of URLs for the current target
+      // Split into batches for concurrent crawling
+      const batches = [];
+      for (let i = 0; i < targetUrls.length; i += maxConcurrent) {
+        batches.push(targetUrls.slice(i, i + maxConcurrent));
+      }
 
-    // Split into batches for concurrent crawling
-    const batches = [];
-    for (let i = 0; i < allTargets.length; i += maxConcurrent) {
-      batches.push(allTargets.slice(i, i + maxConcurrent));
-    }
+      for (const batch of batches) {
+        console.log(`Processing batch of ${batch.length} URLs for search target "${target}"`);
+        const batchPromises = batch.map(async (url) => {
+          try {
+            const apiKey = FirecrawlService.getApiKey();
+            if (!apiKey) {
+              console.warn('No FireCrawl API key found. Please set your API key in the settings.');
+              return null;
+            }
+            const crawlResult = await FirecrawlService.crawlWebsite(url);
 
-    for (const batch of batches) {
-      console.log(`Processing batch of ${batch.length} targets`);
-      const batchPromises = batch.map(async (target) => {
-        try {
-          const apiKey = FirecrawlService.getApiKey();
-          if (!apiKey) {
-            console.warn('No FireCrawl API key found. Please set your API key in the settings.');
+            if (crawlResult.success && crawlResult.data) {
+              console.log(`Successfully scraped ${url}`);
+              return {
+                url: url,
+                content: crawlResult.data.content || '',
+                metadata: crawlResult.data.metadata,
+                searchQuery: target // Track which search query produced this result
+              };
+            } else {
+              console.warn(`Failed to scrape ${url}:`, crawlResult.error);
+              return null;
+            }
+          } catch (error) {
+            console.error(`Error scraping URL:`, error);
             return null;
           }
-          const crawlResult = await FirecrawlService.crawlWebsite(target);
-
-          if (crawlResult.success && crawlResult.data) {
-            console.log(`Successfully scraped ${target}`);
-            return {
-              url: target,
-              content: crawlResult.data.content || '',
-              metadata: crawlResult.data.metadata
-            };
-          } else {
-            console.warn(`Failed to scrape ${target}:`, crawlResult.error);
-            return null;
+        });
+        const batchResults = await Promise.all(batchPromises);
+        for (const result of batchResults) {
+          if (result) {
+            results.push(result);
           }
-        } catch (error) {
-          console.error(`Error scraping target:`, error);
-          return null;
         }
-      });
-      const batchResults = await Promise.all(batchPromises);
-      for (const result of batchResults) {
-        if (result) {
-          results.push(result);
+        
+        // Add delay between batches to avoid rate limiting
+        if (batches.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
-      // Add delay between batches to avoid rate limiting
-      if (batches.length > 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      
+      // Add a small delay between processing different search targets
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
+    
     console.log(`Completed scraping. Found ${results.length} results.`);
     return results;
   }

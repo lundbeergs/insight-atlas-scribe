@@ -16,7 +16,7 @@ serve(async (req) => {
   }
 
   try {
-    const { question } = await req.json();
+    const { question, context } = await req.json();
 
     if (!question) {
       return new Response(
@@ -24,6 +24,8 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -41,21 +43,30 @@ serve(async (req) => {
             Your job is to analyze a research question and create a structured plan with:
             
             1. Intent: A concise summary of what the user wants to know
-            2. Search Focus: A list of specific search queries or targets for web scraping
+            2. Search Focus: A detailed list of specific search queries that will yield comprehensive results.
+               For tech industry research, include industry-specific sites, forums, and event directories.
+               For competitive analysis, include specific industry sources and company names.
+               For event research, include conference sites, industry events, and dates.
             3. Information Goals: What specific information the user is trying to obtain
             4. Original Question: The exact question for reference
+            5. Context: Research context, dates, and domain information for better search relevance
+            
+            Today's date is: ${currentDate}
             
             Format your response as a JSON object with these keys:
             {
               "intent": "string",
               "searchFocus": ["string", "string"],
               "informationGoals": ["string", "string"],
-              "originalQuestion": "string"
+              "originalQuestion": "string",
+              "context": "string"
             }
             
-            Make your plan thorough but focused on the most relevant aspects of the question.` 
+            Make your plan thorough but focused on the most relevant aspects of the question.
+            When creating search queries, be very specific and add date ranges when relevant.
+            Add at least 5-8 search focus items to ensure comprehensive coverage.` 
           },
-          { role: 'user', content: question }
+          { role: 'user', content: question + (context ? `\n\nAdditional context: ${context}` : '') }
         ],
         response_format: { type: "json_object" }
       }),

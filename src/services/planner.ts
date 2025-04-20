@@ -6,11 +6,12 @@ interface PlannerResponse {
   searchFocus: string[];
   informationGoals: string[];
   originalQuestion: string;
+  context?: string;
 }
 
-export async function createPlannerResponse(question: string): Promise<PlannerResponse> {
+export async function createPlannerResponse(question: string, context?: string): Promise<PlannerResponse> {
   const { data, error } = await supabase.functions.invoke('generate-research-plan', {
-    body: { question }
+    body: { question, context }
   });
 
   if (error) {

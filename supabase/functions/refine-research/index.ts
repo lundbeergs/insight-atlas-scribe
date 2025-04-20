@@ -17,11 +17,30 @@ serve(async (req) => {
   }
 
   try {
-    const { searchTargets, currentResults, researchGoals, iteration } = await req.json();
+    const { searchTargets, currentResults, researchGoals, iteration, context } = await req.json();
     console.log(`Starting research refinement - Iteration ${iteration}`);
     console.log(`Research goals: ${JSON.stringify(researchGoals)}`);
     console.log(`Current targets: ${JSON.stringify(searchTargets)}`);
     console.log(`Current results count: ${currentResults?.length || 0}`);
+    console.log(`Context: ${context || 'None provided'}`);
+
+    // Group results by search query to identify gaps
+    const resultsByQuery = {};
+    if (currentResults && currentResults.length > 0) {
+      currentResults.forEach(result => {
+        if (result.searchQuery) {
+          resultsByQuery[result.searchQuery] = resultsByQuery[result.searchQuery] || [];
+          resultsByQuery[result.searchQuery].push(result);
+        }
+      });
+    }
+    
+    // Find search targets with no or few results
+    const underperformingQueries = searchTargets.filter(target => 
+      !resultsByQuery[target] || resultsByQuery[target].length < 3
+    );
+    
+    console.log(`Underperforming queries: ${JSON.stringify(underperformingQueries)}`);
 
     // Analyze existing results and generate better search targets
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -43,21 +62,25 @@ serve(async (req) => {
             You should:
             1. Evaluate the quality and relevance of current results
             2. Identify gaps in the information collected
-            3. Create improved search targets
-            4. Convert broad queries into direct website URLs when possible
+            3. Create improved search targets, especially for queries with insufficient results
+            4. Add highly specific industry sources and event directories relevant to the domain
+            5. Convert broad queries into direct website URLs when possible
             
             Format as a JSON with:
             {
               "analysis": "A paragraph analyzing the current state and gaps",
               "improvedTargets": ["target1", "target2", ...],
               "searchPriority": ["high", "medium", "medium", ...] (matching the targets array),
-              "extractionFocus": "What to look for in these sources"
+              "extractionFocus": "What to look for in these sources",
+              "industrySpecificSites": ["site1", "site2",...] (domain-specific sites to check)
             }
             
             MAKE SURE that all search targets have proper URL format or are specific search queries.
-            General topics like "product pricing information" are NOT good targets.
-            URLs should be specific domains people visit (e.g. "reddit.com/r/investment" not just "investment forums").
-            Non-URL search targets should be specific queries, not general topics.`
+            For tech industry research, be sure to include specific event directories, conference websites, and industry forums.
+            Add context (dates, industry terms) to search queries to improve relevance.
+            Include at least 5-8 improved targets focusing on queries that didn't yield good results before.
+            
+            For underperforming queries, create variations that might yield better results.`
           },
           { 
             role: 'user', 
@@ -65,7 +88,9 @@ serve(async (req) => {
               researchGoals: researchGoals || [],
               currentSearchTargets: searchTargets || [],
               currentResults: currentResults || [],
-              iteration: iteration || 1
+              iteration: iteration || 1,
+              context: context || '',
+              underperformingQueries: underperformingQueries || []
             }) 
           }
         ],
@@ -78,8 +103,20 @@ serve(async (req) => {
     
     // If we have improved targets, try to crawl them
     if (refinementResults.improvedTargets && refinementResults.improvedTargets.length > 0) {
-      // Get the highest priority targets (limit to 2 to avoid hitting rate limits)
-      const priorityTargets = refinementResults.improvedTargets.slice(0, 2);
+      // Get all high priority targets (up to 5)
+      const highPriorityTargets = [];
+      if (refinementResults.searchPriority) {
+        for (let i = 0; i < refinementResults.improvedTargets.length; i++) {
+          if (refinementResults.searchPriority[i] === 'high' && highPriorityTargets.length < 5) {
+            highPriorityTargets.push(refinementResults.improvedTargets[i]);
+          }
+        }
+      }
+      
+      // If no high priority targets, just take the first 5
+      const priorityTargets = highPriorityTargets.length > 0 
+        ? highPriorityTargets 
+        : refinementResults.improvedTargets.slice(0, 5);
       
       // Crawl the new targets
       const newResults = [];
@@ -95,7 +132,53 @@ serve(async (req) => {
                 target.includes('.edu') || target.includes('.gov')) {
               processedUrl = `https://${target}`;
             } else {
-              // Skip targets that can't be easily converted to URLs
+              // For non-URL targets, try to use SerpAPI first
+              if (SerpApiService.getApiKey()) {
+                try {
+                  const serpUrls = await SerpApiService.getTopSearchUrls(target, 5);
+                  if (serpUrls.length > 0) {
+                    // Process each URL from SerpAPI
+                    for (const serpUrl of serpUrls) {
+                      console.log(`Crawling SerpAPI result: ${serpUrl}`);
+                      const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${firecrawlAPIKey}`,
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                          url: serpUrl,
+                          limit: 5,
+                          scrapeOptions: {
+                            formats: ['markdown', 'html']
+                          }
+                        })
+                      });
+                      
+                      const crawlResultJson = await crawlResult.json();
+                      
+                      if (crawlResultJson.success) {
+                        newResults.push({
+                          url: serpUrl,
+                          content: crawlResultJson.content || '',
+                          metadata: crawlResultJson.metadata || {},
+                          searchQuery: target
+                        });
+                        console.log(`Successfully crawled ${serpUrl}`);
+                      }
+                      
+                      // Small delay between crawls
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                    // Continue to next target after processing all SerpAPI results
+                    continue;
+                  }
+                } catch (err) {
+                  console.error(`SerpAPI error for ${target}:`, err);
+                }
+              }
+              
+              // If SerpAPI fails or is not available, skip this non-URL target
               console.log(`Skipping non-URL target: ${target}`);
               continue;
             }
@@ -112,7 +195,7 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               url: processedUrl,
-              limit: 3,
+              limit: 5, // Increased from 3 to 5
               scrapeOptions: {
                 formats: ['markdown', 'html']
               }
@@ -125,7 +208,8 @@ serve(async (req) => {
             newResults.push({
               url: processedUrl,
               content: crawlResultJson.content || '',
-              metadata: crawlResultJson.metadata || {}
+              metadata: crawlResultJson.metadata || {},
+              searchQuery: target
             });
             console.log(`Successfully crawled ${processedUrl}`);
           } else {
@@ -139,6 +223,53 @@ serve(async (req) => {
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
       
+      // Process industry-specific sites if provided
+      if (refinementResults.industrySpecificSites && refinementResults.industrySpecificSites.length > 0) {
+        const industryTargets = refinementResults.industrySpecificSites.slice(0, 3); // Process up to 3 industry sites
+        
+        for (const target of industryTargets) {
+          try {
+            let processedUrl = target;
+            if (!target.startsWith('http://') && !target.startsWith('https://')) {
+              processedUrl = `https://${target}`;
+            }
+            
+            console.log(`Crawling industry-specific site: ${processedUrl}`);
+            
+            const crawlResult = await fetch('https://api.firecrawl.dev/v1/crawl-url', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${firecrawlAPIKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                url: processedUrl,
+                limit: 5,
+                scrapeOptions: {
+                  formats: ['markdown', 'html']
+                }
+              })
+            });
+            
+            const crawlResultJson = await crawlResult.json();
+            
+            if (crawlResultJson.success) {
+              newResults.push({
+                url: processedUrl,
+                content: crawlResultJson.content || '',
+                metadata: crawlResultJson.metadata || {},
+                searchQuery: 'Industry-specific site'
+              });
+              console.log(`Successfully crawled industry site ${processedUrl}`);
+            }
+          } catch (error) {
+            console.error(`Error crawling industry site ${target}:`, error);
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      
       // Combine results with analysis
       return new Response(
         JSON.stringify({
@@ -146,6 +277,7 @@ serve(async (req) => {
           improvedTargets: refinementResults.improvedTargets,
           searchPriority: refinementResults.searchPriority,
           extractionFocus: refinementResults.extractionFocus,
+          industrySpecificSites: refinementResults.industrySpecificSites || [],
           newResults
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
