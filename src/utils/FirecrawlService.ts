@@ -1,3 +1,4 @@
+
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -149,31 +150,33 @@ export class FirecrawlService {
       // Add to recent requests
       this.recentRequests.push({ timestamp: Date.now(), url: targetUrl });
 
-      // Using the format directly supported by FirecrawlApp API
+      // Configure options according to the API's expected format
       const crawlResponse = await this.firecrawlApp.crawlUrl(targetUrl, {
         limit: this.PAGE_LIMIT,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          include: [
-            'article',
-            'main',
-            '.content',
-            '.post',
-            '.article',
-            'h1, h2, h3',
-            'p',
-            'ul, ol',
-            'table'
-          ],
-          exclude: [
-            'nav',
-            'header',
-            'footer',
-            '.sidebar',
-            '.ads',
-            '.cookie-notice',
-            '.social-share'
-          ]
+          selectors: {
+            include: [
+              'article',
+              'main',
+              '.content',
+              '.post',
+              '.article',
+              'h1, h2, h3',
+              'p',
+              'ul, ol',
+              'table'
+            ],
+            exclude: [
+              'nav',
+              'header',
+              'footer',
+              '.sidebar',
+              '.ads',
+              '.cookie-notice',
+              '.social-share'
+            ]
+          }
         }
       }) as CrawlResponse;
       
@@ -202,21 +205,21 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Call the search method directly as per API
+      // Call the search method with the correct options
       const searchResponse = await this.firecrawlApp.search(query, {
         limit: options.limit || 5
       });
 
-      // If the response is successful and has results
+      // Process the response based on the actual API response structure
       if (searchResponse && typeof searchResponse === 'object' && searchResponse.success === true) {
         let searchResults: SearchResult[] = [];
         
-        // Handle potential data structure variations
+        // Handle different possible response formats
         if (Array.isArray(searchResponse.data)) {
           searchResults = searchResponse.data.map(item => ({
             url: item.url || '',
             title: item.title || '',
-            snippet: item.content?.substring(0, 150) || ''
+            snippet: item.snippet || (typeof item.text === 'string' ? item.text.substring(0, 150) : '')
           }));
         }
         
@@ -251,12 +254,12 @@ export class FirecrawlService {
         this.firecrawlApp = new FirecrawlApp({ apiKey });
       }
 
-      // Convert schema to array format if it's not already
-      const schemaArray = [schema]; // Always wrap in array to ensure correct type
+      // Make sure schema is passed in the format expected by the API
+      const extractionSchema = Array.isArray(schema) ? schema : [schema];
       
-      // Call the extract method
+      // Call the extract method with the proper format
       const extractResult = await this.firecrawlApp.extract(url, {
-        schema: schemaArray // Using 'schema' property as per API specs
+        schema: extractionSchema
       });
 
       if (extractResult && extractResult.success && extractResult.data) {
