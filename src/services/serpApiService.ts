@@ -1,4 +1,6 @@
 
+import { supabase } from "@/integrations/supabase/client";
+
 interface SerpApiResponse {
   success: boolean;
   results?: any[];
@@ -24,26 +26,22 @@ export class SerpApiService {
     }
 
     try {
-      const url = new URL('https://serpapi.com/search');
-      url.searchParams.append('q', query);
-      url.searchParams.append('api_key', apiKey);
-      url.searchParams.append('engine', 'google');
+      console.log(`Calling serp-api-search edge function for query: ${query}`);
+      
+      // Call the Supabase Edge Function instead of direct API
+      const { data, error } = await supabase.functions.invoke('serp-api-search', {
+        body: { query }
+      });
 
-      const response = await fetch(url.toString());
-      const data = await response.json();
-
-      if (data.error) {
-        console.error('SerpAPI error:', data.error);
+      if (error) {
+        console.error('Error calling serp-api-search function:', error);
         return { 
           success: false, 
-          error: data.error 
+          error: error.message || 'Failed to call search service'
         };
       }
 
-      return {
-        success: true,
-        results: data.organic_results || []
-      };
+      return data;
     } catch (error) {
       console.error('Error during SerpAPI search:', error);
       return {

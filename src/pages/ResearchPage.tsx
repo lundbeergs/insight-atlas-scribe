@@ -7,10 +7,11 @@ import { useToast } from "@/hooks/use-toast";
 import { createPlannerResponse } from "@/services/planner";
 import ResearchPlan from "@/components/ResearchPlan";
 import ResearchResults from "@/components/ResearchResults";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { WebScraperService, ScrapingResult } from "@/services/webScraperService";
 import { ResearchIteration, ResearchReasonerService, ResearchSummary } from "@/services/researchReasonerService";
 import { ApiKeyManager } from "@/components/ApiKeyManager";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 interface PlannerResponse {
   intent: string;
@@ -32,6 +33,7 @@ const ResearchPage = () => {
   const [researchIterations, setResearchIterations] = useState<ResearchIteration[]>([]);
   const [currentIteration, setCurrentIteration] = useState(0);
   const [researchSummary, setResearchSummary] = useState<ResearchSummary | null>(null);
+  const [researchError, setResearchError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +48,7 @@ const ResearchPage = () => {
     }
     
     setLoading(true);
+    setResearchError(null);
     try {
       const response = await createPlannerResponse(question);
       setPlannerResponse(response);
@@ -75,14 +78,16 @@ const ResearchPage = () => {
     
     setIsExecutingResearch(true);
     setResearchSummary(null);
+    setResearchError(null);
 
     try {
       await conductIterativeResearch(plannerResponse.searchFocus);
     } catch (error) {
       console.error("Error executing research:", error);
+      setResearchError(error instanceof Error ? error.message : String(error));
       toast({
         title: "Research Error",
-        description: "An error occurred during research. Please try again.",
+        description: "An error occurred during research. Please check API keys and try again.",
         variant: "destructive",
       });
     } finally {
@@ -110,9 +115,10 @@ const ResearchPage = () => {
       if (results.length === 0) {
         toast({
           title: "No Results",
-          description: "No results found for the current queries.",
+          description: "No results found for the current queries. Please check your API keys.",
           variant: "destructive",
         });
+        setResearchError("No search results found. Please verify that your SerpAPI and Firecrawl API keys are valid.");
         break;
       }
 
@@ -207,6 +213,16 @@ const ResearchPage = () => {
           </CardFooter>
         </form>
       </Card>
+
+      {researchError && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            {researchError}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-2">
