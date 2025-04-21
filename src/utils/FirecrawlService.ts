@@ -1,3 +1,4 @@
+
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -194,12 +195,11 @@ export class FirecrawlService {
         url
       });
 
-      // Attempt crawl with more options for better content extraction
+      // Use only supported properties for the Firecrawl library
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
         limit: 5, 
         scrapeOptions: {
           formats: ['markdown', 'html', 'content'],
-          followRedirects: true,
           maxWait: 15000,
           timeout: 25000
         }
