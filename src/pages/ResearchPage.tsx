@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { createPlannerResponse } from "@/services/planner";
@@ -45,10 +44,8 @@ const ResearchPage = () => {
   const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
   const { toast } = useToast();
   
-  // Use a ref to track the research timeout
   const researchTimeoutRef = useRef<number | null>(null);
   
-  // Function to cancel ongoing research
   const cancelResearch = () => {
     WebScraperService.cancelResearch();
     if (researchTimeoutRef.current) {
@@ -80,7 +77,6 @@ const ResearchPage = () => {
     try {
       const response = await createPlannerResponse(question);
       setPlannerResponse(response);
-      // Reset research state
       setResearchResults([]);
       setIterations([]);
       setCurrentIteration(0);
@@ -127,7 +123,6 @@ const ResearchPage = () => {
     setResearchProgress(10);
     setTimeoutMessage(null);
     
-    // Set a global timeout for the entire research operation
     researchTimeoutRef.current = window.setTimeout(() => {
       setTimeoutMessage(`Research timed out after ${RESEARCH_TIMEOUT_MS/1000} seconds`);
       setIsResearching(false);
@@ -139,10 +134,9 @@ const ResearchPage = () => {
       });
     }, RESEARCH_TIMEOUT_MS);
     
-    // Start with the initial search targets from the planner
     if (iterations.length === 0) {
       setIterations([{
-        targets: plannerResponse.searchFocus.slice(0, 5), // Limit to 5 search targets
+        targets: plannerResponse.searchFocus.slice(0, 5),
         results: []
       }]);
       setCurrentIteration(1);
@@ -152,16 +146,14 @@ const ResearchPage = () => {
     
     try {
       const searchTargets = iterations.length === 0 
-        ? plannerResponse.searchFocus.slice(0, 5) // Limit to 5 search targets
+        ? plannerResponse.searchFocus.slice(0, 5)
         : iterations[iterations.length - 1].targets.slice(0, 5);
       
       setResearchProgress(30);
       console.log("Starting research with search targets:", searchTargets);
       
-      // First, do the initial scraping
       const results = await WebScraperService.scrapeSearchTargets(searchTargets);
       
-      // Check if the research was canceled during scraping
       if (timeoutMessage) {
         return;
       }
@@ -176,7 +168,6 @@ const ResearchPage = () => {
         });
       }
       
-      // Now use the AI to refine and improve results
       setIsReasoning(true);
       
       const currentResults = [...researchResults, ...results];
@@ -184,7 +175,6 @@ const ResearchPage = () => {
       
       setResearchProgress(80);
       
-      // Call our edge function to refine the research with a timeout
       const refinementPromise = supabase.functions.invoke('refine-research', {
         body: { 
           searchTargets, 
@@ -194,7 +184,6 @@ const ResearchPage = () => {
         }
       });
       
-      // Add a timeout for the refinement step
       const refinementTimeout = new Promise((_, reject) => {
         setTimeout(() => reject(new Error("Edge function timed out")), 45000);
       });
@@ -205,30 +194,26 @@ const ResearchPage = () => {
           return { data: { error: "Edge function timed out" } };
         });
       
-      // Check if the research was canceled during refinement
       if (timeoutMessage) {
         return;
       }
       
-      const refinementData = refinementResponse.data;
+      const refinementData = (refinementResponse as { data: any }).data;
       
       if (refinementData.error) {
         console.error("Research refinement failed:", refinementData.error);
         throw new Error(refinementData.error);
       }
       
-      // Update the iterations with the refined targets and results
       const updatedIterations = [...iterations];
       
-      // Update the current iteration with the results we got
       if (updatedIterations.length > 0) {
         updatedIterations[updatedIterations.length - 1].results = results;
       }
       
-      // Add the new iteration with improved targets
       if (refinementData.improvedTargets && refinementData.improvedTargets.length > 0) {
         updatedIterations.push({
-          targets: refinementData.improvedTargets.slice(0, 5), // Limit to 5 targets
+          targets: refinementData.improvedTargets.slice(0, 5),
           results: refinementData.newResults || [],
           analysis: refinementData.analysis,
           extractionFocus: refinementData.extractionFocus
@@ -237,12 +222,10 @@ const ResearchPage = () => {
       
       setIterations(updatedIterations);
       
-      // Add any new results
       if (refinementData.newResults && refinementData.newResults.length > 0) {
         setResearchResults(prev => [...prev, ...refinementData.newResults]);
       }
       
-      // Set the analysis text
       setAnalysisText(refinementData.analysis || "No analysis available");
       
       setResearchProgress(100);
