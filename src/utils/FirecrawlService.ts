@@ -1,4 +1,3 @@
-
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -48,7 +47,6 @@ export class FirecrawlService {
     }
   }
 
-  // Enhanced URL validation
   static isValidUrl(url: string): boolean {
     try {
       // Basic URL parsing
@@ -78,7 +76,6 @@ export class FirecrawlService {
     }
   }
 
-  // Improved URL formatting with better domain detection
   static formatUrl(input: string): string {
     if (!input || typeof input !== 'string') {
       return '';
@@ -110,7 +107,6 @@ export class FirecrawlService {
     return "";
   }
   
-  // Helper to identify if a string looks like a domain
   private static looksLikeDomain(input: string): boolean {
     if (!input) return false;
     
@@ -125,7 +121,6 @@ export class FirecrawlService {
            input.includes('.no');   // For Norwegian domains
   }
   
-  // Helper to identify if Unicode string looks like a domain
   private static looksLikeDomainWithUnicode(input: string): boolean {
     return input.includes('.') && 
            !input.includes(' ') &&
@@ -148,7 +143,6 @@ export class FirecrawlService {
     return true;
   }
 
-  // Improved crawl function with better error handling and retries
   static async crawlWebsite(url: string, timeoutMs: number = 30000): Promise<{ success: boolean; error?: string; data?: any }> {
     // Skip invalid URLs early
     if (!url || !this.isValidUrl(url)) {
@@ -201,12 +195,10 @@ export class FirecrawlService {
       });
 
       // Attempt crawl with more options for better content extraction
-      // Fixed: Changed 'text' to 'content' in the formats array
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
         limit: 5, 
         scrapeOptions: {
           formats: ['markdown', 'html', 'content'],
-          includeTables: true,
           followRedirects: true,
           maxWait: 15000,
           timeout: 25000
