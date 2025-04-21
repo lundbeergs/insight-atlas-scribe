@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -185,8 +186,8 @@ Respond as JSON:
                   });
                   const crawlResultJson = await crawlResult.json();
                   if (crawlResultJson.success) {
-                    // Validate content is useful
-                    if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+                    // Always save content if it exists at all
+                    if (crawlResultJson.content) {
                       newResults.push({
                         url: serpLink,
                         content: crawlResultJson.content || '',
@@ -195,7 +196,7 @@ Respond as JSON:
                       });
                       console.log(`Successfully crawled ${serpLink}`);
                     } else {
-                      console.log(`Content too short for ${serpLink}`);
+                      console.log(`No content for ${serpLink}`);
                     }
                   }
                 } catch (error) {
@@ -233,8 +234,8 @@ Respond as JSON:
             });
             const crawlResultJson = await crawlResult.json();
             if (crawlResultJson.success) {
-              // Validate content length
-              if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+              // Accept any content
+              if (crawlResultJson.content) {
                 newResults.push({
                   url: processedUrl,
                   content: crawlResultJson.content || '',
@@ -243,7 +244,7 @@ Respond as JSON:
                 });
                 console.log(`Successfully crawled ${processedUrl}`);
               } else {
-                console.log(`Content too short for ${processedUrl}`);
+                console.log(`No content for ${processedUrl}`);
               }
             } else {
               console.error(`Failed to crawl ${processedUrl}:`, crawlResultJson.error);
@@ -285,8 +286,8 @@ Respond as JSON:
               });
               const crawlResultJson = await crawlResult.json();
               if (crawlResultJson.success) {
-                // Only add if we have substantial content
-                if (crawlResultJson.content && crawlResultJson.content.length > 100) {
+                // Accept any content
+                if (crawlResultJson.content) {
                   newResults.push({
                     url: processedUrl,
                     content: crawlResultJson.content || '',
@@ -295,7 +296,7 @@ Respond as JSON:
                   });
                   console.log(`Successfully crawled industry site ${processedUrl}`);
                 } else {
-                  console.log(`Content too short for industry site ${processedUrl}`);
+                  console.log(`No content for industry site ${processedUrl}`);
                 }
               }
             } catch (error) {

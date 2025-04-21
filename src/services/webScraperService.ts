@@ -34,25 +34,31 @@ export class WebScraperService {
     console.log('Research canceled by user or timeout');
   }
 
-  // Helper to validate content is relevant and substantial
+  // UPDATED: Modified to be much less strict with content relevance
   private static isContentRelevant(content: string, query: string): boolean {
-    if (!content || content.length < 200) return false;
-    
-    // Basic relevance check - ensure content has some substantial text
-    if (content.split(' ').length < 50) return false;
-    
-    // Check if content contains some keywords from the query
-    const keywords = query.toLowerCase().split(' ')
-      .filter(word => word.length > 3) // Only check substantial words
-      .slice(0, 5); // Use up to 5 keywords
-      
-    if (keywords.length > 0) {
-      const contentLower = content.toLowerCase();
-      const matchCount = keywords.filter(keyword => contentLower.includes(keyword)).length;
-      // At least 30% of keywords should be present
-      return matchCount >= Math.max(1, Math.floor(keywords.length * 0.3));
+    // Only check if content exists and has basic length
+    if (!content || content.length < 50) {
+      console.log('Content rejected: Too short or empty');
+      return false;
     }
     
+    // Accept if it has substantial text (very relaxed check)
+    if (content.split(' ').length > 20) {
+      return true;
+    }
+    
+    // Very minimal keyword check (optional - if we get here)
+    const queryWords = query.toLowerCase().split(' ');
+    const contentLower = content.toLowerCase();
+    
+    // If ANY single query word is found, consider it relevant
+    for (const word of queryWords) {
+      if (word.length > 3 && contentLower.includes(word)) {
+        return true;
+      }
+    }
+    
+    // By default, accept content - we want more results rather than fewer
     return true;
   }
 
@@ -203,10 +209,12 @@ export class WebScraperService {
               const crawlResult = await FirecrawlService.crawlWebsite(url, URL_TIMEOUT_MS);
 
               if (crawlResult.success && crawlResult.data) {
-                // -- SAVE FULL CONTENT from crawl, not a snippet --
+                // -- SAVE FULL CONTENT from crawl, always --
                 const fcData = crawlResult.data;
                 const fullContent = fcData.content || (fcData.content && fcData.content.markdown) || '';
-                if (fullContent.length > 100 && this.isContentRelevant(fullContent, target)) {
+                
+                // Always accept content that has any substance
+                if (fullContent.length > 0) {
                   return {
                     url: url,
                     content: fullContent,
@@ -214,7 +222,7 @@ export class WebScraperService {
                     searchQuery: target
                   };
                 } else {
-                  console.warn(`Content not relevant for ${url}: ${fullContent.length} chars`);
+                  console.warn(`Empty content for ${url}`);
                   return null;
                 }
               } else {
@@ -226,7 +234,9 @@ export class WebScraperService {
               return null;
             }
           });
-          // ... keep rest of batch logic unchanged ...
+          
+          // ... keep existing code (batch results processing)
+          
           const batchResults = await Promise.all(batchPromises);
           let newResults = 0;
           for (const result of batchResults) {
@@ -251,7 +261,8 @@ export class WebScraperService {
         }
       }
 
-      // ... keep industry-specific fallback unchanged ...
+      // ... keep existing code (industry-specific fallbacks)
+      
       return results;
     } catch (error) {
       console.error("Unexpected error in scrapeSearchTargets:", error);

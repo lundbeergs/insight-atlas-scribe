@@ -168,11 +168,11 @@ export class FirecrawlService {
         };
       }
 
-      // Validate content is actually useful (not empty or too short)
-      if (!crawlResponse.content || crawlResponse.content.trim().length < 100) {
+      // MODIFIED: Accept content more liberally - even very short content
+      if (!crawlResponse.content) {
         return {
           success: false,
-          error: 'Retrieved content was too short or empty',
+          error: 'Retrieved content was empty',
           data: crawlResponse
         };
       }

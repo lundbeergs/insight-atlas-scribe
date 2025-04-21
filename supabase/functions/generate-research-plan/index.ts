@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -40,7 +41,10 @@ realistic research tasks using clear, natural-language search phrases.
    - 'Entrust conference participation 2024'
    - 'Entrust webinars and seminars 2024'
    - 'Entrust sponsorships 2024'
-   - or similar, matching the user's industry/domain).
+   - 'HID Global PKI competitors 2024'
+   - 'Entrust events calendar'
+   - 'Entrust RSA Conference 2024'
+   ).
    * Do NOT use "site:domain" or explicit date windows; instead, include year/context LIKE '2024' or 'last 12 months' as natural text.
    * Avoid direct URLs in this section.
 3. **Information Goals**: List the key things the user is hoping to learn (bullets).
@@ -53,13 +57,13 @@ Default time frame to reference: "${previousYearStr} to ${currentDate}" for tren
 Format answer as a single JSON object:
 {
   "intent": "string",
-  "searchFocus": ["string", ...], // natural-language, context-rich search phrases only!
+  "searchFocus": ["string", ...], // IMPORTANT: use natural-language phrases ONLY - no site: queries!
   "informationGoals": ["string", ...],
   "originalQuestion": "string",
   "context": "string"
 }
 
-ALWAYS make searchFocus clear, context-rich, readable phrases, per above.
+IMPORTANT: For searchFocus, use ONLY natural-language phrases like "Entrust events 2024" or "Entrust trade shows last year" - NEVER use site: queries or URL formats.
 `;
 
     const controller = new AbortController();
