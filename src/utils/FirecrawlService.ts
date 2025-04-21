@@ -74,8 +74,7 @@ export class FirecrawlService {
       return `https://${input}`;
     }
     
-    // Don't create Google search URLs as a fallback
-    // Instead return empty string to indicate this isn't a good URL to crawl
+    // Return empty string for non-URL inputs
     return "";
   }
   
@@ -148,8 +147,14 @@ export class FirecrawlService {
         };
       }
 
+      // Add rate limiting tracking
+      this.recentRequests.push({
+        timestamp: Date.now(),
+        url
+      });
+
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
-        limit: 5, // Reduced from 100 to improve performance
+        limit: 5, // Reduced to improve performance
         scrapeOptions: {
           formats: ['markdown', 'html']
         }
@@ -168,16 +173,8 @@ export class FirecrawlService {
         };
       }
 
-      // MODIFIED: Accept content more liberally - even very short content
-      if (!crawlResponse.content) {
-        return {
-          success: false,
-          error: 'Retrieved content was empty',
-          data: crawlResponse
-        };
-      }
-
-      console.log(`Crawl successful for ${url}, content length: ${crawlResponse.content.length} chars`);
+      // MODIFIED: Always accept content of any length
+      console.log(`Crawl successful for ${url}, content length: ${crawlResponse.content?.length || 0} chars`);
       return { 
         success: true,
         data: crawlResponse 

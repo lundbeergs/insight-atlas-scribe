@@ -1,3 +1,4 @@
+
 import { FirecrawlService } from '../utils/FirecrawlService';
 import { SerpApiService } from '../utils/SerpApiService';
 
@@ -8,14 +9,14 @@ export interface ScrapingResult {
   searchQuery?: string; // Track which search query produced this result
 }
 
-// Reduced list of industry sources
+// Industry sources as fallbacks
 const INDUSTRY_SPECIFIC_SOURCES = [
   "https://www.entrust.com/about/newsroom/events/",
   "https://www.rsaconference.com/",
   "https://securityboulevard.com/",
 ];
 
-// Global research timeout
+// Global research parameters
 const MAX_URLS_PER_TARGET = 5;
 const MAX_RESULTS_TOTAL = 15;
 const URL_TIMEOUT_MS = 30000; // 30 seconds per URL
@@ -26,43 +27,15 @@ const TARGET_DELAY_MS = 500;
 export class WebScraperService {
   // Flag to track if research has been canceled or timed out
   private static isResearchCanceled = false;
-  // Removed: private static researchTimeoutId
 
   static cancelResearch() {
     this.isResearchCanceled = true;
-    // Removed: clearTimeout(this.researchTimeoutId)
     console.log('Research canceled by user or timeout');
   }
 
-  // UPDATED: Modified to be much less strict with content relevance
-  private static isContentRelevant(content: string, query: string): boolean {
-    // Only check if content exists and has basic length
-    if (!content || content.length < 50) {
-      console.log('Content rejected: Too short or empty');
-      return false;
-    }
-    
-    // Accept if it has substantial text (very relaxed check)
-    if (content.split(' ').length > 20) {
-      return true;
-    }
-    
-    // Very minimal keyword check (optional - if we get here)
-    const queryWords = query.toLowerCase().split(' ');
-    const contentLower = content.toLowerCase();
-    
-    // If ANY single query word is found, consider it relevant
-    for (const word of queryWords) {
-      if (word.length > 3 && contentLower.includes(word)) {
-        return true;
-      }
-    }
-    
-    // By default, accept content - we want more results rather than fewer
-    return true;
-  }
+  // REMOVED: isContentRelevant function completely
 
-  // Redesigned implementation with timeouts, better concurrency, and early exit
+  // Redesigned implementation with better search handling
   static async scrapeSearchTargets(
     searchTargets: string[], 
     researchContext?: string, 
@@ -71,8 +44,7 @@ export class WebScraperService {
   ): Promise<ScrapingResult[]> {
     this.isResearchCanceled = false;
     const results: ScrapingResult[] = [];
-    // REMOVED:  this.researchTimeoutId usage and global timeout logic
-
+    
     try {
       const serpApiKey = SerpApiService.getApiKey();
       const firecrawlApiKey = FirecrawlService.getApiKey();
@@ -82,7 +54,7 @@ export class WebScraperService {
         return [];
       }
       
-      console.log('Starting to scrape search targets with improved performance:', searchTargets);
+      console.log('Starting web scraper with search targets:', searchTargets);
       console.log('Research context:', researchContext);
       
       // Set up date range for context if not provided
@@ -91,10 +63,10 @@ export class WebScraperService {
       previousYear.setFullYear(now.getFullYear() - 1);
       const dateStr = dateWindow || `${previousYear.toISOString().split("T")[0]} to ${now.toISOString().split("T")[0]}`;
       
-      // First, prioritize targets by type (URLs first, then site queries, then regular queries)
+      // Prioritize targets by type (URLs first, then site queries, then regular queries)
       const prioritizedTargets = this.prioritizeTargets(searchTargets);
       
-      // Process each search target individually, but with better concurrency
+      // Process each search target individually
       for (const target of prioritizedTargets) {
         // Check if research was canceled or we have enough results
         if (this.isResearchCanceled || results.length >= MAX_RESULTS_TOTAL) {
@@ -105,21 +77,18 @@ export class WebScraperService {
         console.log(`Processing search target: "${target}"`);
         let urlsToScrape: string[] = [];
         
-        // CASE 1: Target is already a direct URL or domain
+        // CASE 1: Target is already a direct URL
         if (target.startsWith('http') || FirecrawlService.isValidUrl(`https://${target}`)) {
           const url = target.startsWith('http') ? target : `https://${target}`;
           console.log(`Target is direct URL: ${url}`);
           urlsToScrape.push(url);
         }
-        // CASE 2: Target is a site: query, handle specially
+        // CASE 2: Target is a site: query
         else if (target.startsWith('site:')) {
           try {
             if (serpApiKey) {
               // Use SerpAPI to get relevant pages from the site
-              const domain = target.split('site:')[1].split(' ')[0];
-              console.log(`Processing site: query for domain: ${domain}`);
-              
-              // First try to get URLs via SerpAPI
+              console.log(`Processing site: query: ${target}`);
               const foundUrls = await SerpApiService.getTopSearchUrls(
                 target, 
                 MAX_URLS_PER_TARGET, 
@@ -132,6 +101,7 @@ export class WebScraperService {
                 urlsToScrape.push(...foundUrls);
               } else {
                 // Fallback: just use the domain directly
+                const domain = target.split('site:')[1].split(' ')[0];
                 console.log(`No SerpAPI results, falling back to direct domain: ${domain}`);
                 urlsToScrape.push(`https://${domain}`);
               }
@@ -144,10 +114,10 @@ export class WebScraperService {
             console.error(`Error processing site: query ${target}:`, error);
           }
         }
-        // CASE 3: Regular search query, use SerpAPI
+        // CASE 3: Regular search query - ALWAYS USE SerpAPI if available
         else if (serpApiKey) {
           try {
-            // Enrich the query with context and date ranges
+            // Add context to the query if provided
             let enrichedQuery = target;
             if (researchContext && !target.includes(researchContext)) {
               enrichedQuery += ` ${researchContext}`;
@@ -157,8 +127,7 @@ export class WebScraperService {
             const foundUrls = await SerpApiService.getTopSearchUrls(
               enrichedQuery, 
               MAX_URLS_PER_TARGET, 
-              dateStr, 
-              researchContext
+              dateStr
             );
             
             if (foundUrls.length > 0) {
@@ -175,7 +144,7 @@ export class WebScraperService {
             urlsToScrape.push(INDUSTRY_SPECIFIC_SOURCES[0]);
           }
         } else {
-          // No SerpAPI key available
+          // No SerpAPI key available, use industry sources
           console.warn("No SerpAPI key found. Using industry-specific source.");
           urlsToScrape.push(INDUSTRY_SPECIFIC_SOURCES[0]);
         }
@@ -183,7 +152,7 @@ export class WebScraperService {
         // Filter out invalid or duplicate URLs
         urlsToScrape = [...new Set(urlsToScrape)].filter(url => 
           FirecrawlService.isValidUrl(url) && !url.startsWith('https://www.google.com/search')
-        ).slice(0, MAX_URLS_PER_TARGET); // Limit to max URLs per target
+        ).slice(0, MAX_URLS_PER_TARGET);
         
         // If we still have no valid URLs, continue to next target
         if (urlsToScrape.length === 0) {
@@ -209,22 +178,17 @@ export class WebScraperService {
               const crawlResult = await FirecrawlService.crawlWebsite(url, URL_TIMEOUT_MS);
 
               if (crawlResult.success && crawlResult.data) {
-                // -- SAVE FULL CONTENT from crawl, always --
+                // Always accept the content regardless of relevance
                 const fcData = crawlResult.data;
-                const fullContent = fcData.content || (fcData.content && fcData.content.markdown) || '';
+                const fullContent = fcData.content || '';
                 
-                // Always accept content that has any substance
-                if (fullContent.length > 0) {
-                  return {
-                    url: url,
-                    content: fullContent,
-                    metadata: fcData.metadata || {},
-                    searchQuery: target
-                  };
-                } else {
-                  console.warn(`Empty content for ${url}`);
-                  return null;
-                }
+                // Accept any content of any length
+                return {
+                  url: url,
+                  content: fullContent,
+                  metadata: fcData.metadata || {},
+                  searchQuery: target
+                };
               } else {
                 console.warn(`Failed to scrape ${url}:`, crawlResult.error);
                 return null;
@@ -235,8 +199,6 @@ export class WebScraperService {
             }
           });
           
-          // ... keep existing code (batch results processing)
-          
           const batchResults = await Promise.all(batchPromises);
           let newResults = 0;
           for (const result of batchResults) {
@@ -245,30 +207,23 @@ export class WebScraperService {
               newResults++;
             }
           }
-          if (newResults === 0 && i + BATCH_SIZE < urlsToScrape.length) {
-            await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-            continue;
-          }
-          if (results.length >= MAX_RESULTS_TOTAL) {
-            break;
-          }
+          
           if (i + BATCH_SIZE < urlsToScrape.length) {
             await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
           }
         }
-        if (searchTargets.indexOf(target) < searchTargets.length - 1) {
+        
+        if (prioritizedTargets.indexOf(target) < prioritizedTargets.length - 1) {
           await new Promise(resolve => setTimeout(resolve, TARGET_DELAY_MS));
         }
       }
 
-      // ... keep existing code (industry-specific fallbacks)
-      
+      console.log(`Web scraper completed with ${results.length} results found`);
       return results;
     } catch (error) {
       console.error("Unexpected error in scrapeSearchTargets:", error);
       return results;
     }
-    // Removed: finally { clearTimeout... }
   }
 
   // Helper to prioritize targets by type

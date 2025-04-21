@@ -35,18 +35,29 @@ realistic research tasks using clear, natural-language search phrases.
 
 1. **Intent**: Concise summary of WHAT the user wants to know.
 2. **Search Focus**: List 6-8 highly-focused, clear, *natural-language* search queries a human would use 
-   (no "site:" or raw URLs; use readable phrases such as:
-   - 'Entrust events 2024'
-   - 'PKI industry trade shows 2024'
-   - 'Entrust conference participation 2024'
-   - 'Entrust webinars and seminars 2024'
-   - 'Entrust sponsorships 2024'
-   - 'HID Global PKI competitors 2024'
-   - 'Entrust events calendar'
-   - 'Entrust RSA Conference 2024'
-   ).
-   * Do NOT use "site:domain" or explicit date windows; instead, include year/context LIKE '2024' or 'last 12 months' as natural text.
-   * Avoid direct URLs in this section.
+   that are MOST LIKELY to retrieve relevant information. Use a mix of:
+   
+   A. Direct website queries like:
+      - 'entrust.com/events'
+      - 'entrust.com/about/newsroom/events/'
+      - 'entrust.com blog'
+      - Exact competitor company URLs related to events
+   
+   B. Natural search terms like:
+      - 'Entrust events 2024'
+      - 'Entrust conference participation 2024'
+      - 'Entrust webinars and seminars 2024'
+      - 'Entrust RSA Conference 2024'
+   
+   C. Industry-specific searches:
+      - 'PKI industry trade shows 2024'
+      - 'Cybersecurity conferences Entrust 2024'
+      - 'Digital identity events Entrust speaking'
+   
+   * Include specific dates or recent timeframes in most queries (e.g., '2024', 'last 12 months')
+   * Avoid general terms without company/industry context
+   * Include at least 3 direct website URLs in your list
+   
 3. **Information Goals**: List the key things the user is hoping to learn (bullets).
 4. **Original Question**: Just echo the user's original question.
 5. **Context**: Brief overall context (dates, industry, company names, etc.) for maximum relevance.
@@ -57,13 +68,13 @@ Default time frame to reference: "${previousYearStr} to ${currentDate}" for tren
 Format answer as a single JSON object:
 {
   "intent": "string",
-  "searchFocus": ["string", ...], // IMPORTANT: use natural-language phrases ONLY - no site: queries!
+  "searchFocus": ["string", ...], 
   "informationGoals": ["string", ...],
   "originalQuestion": "string",
   "context": "string"
 }
 
-IMPORTANT: For searchFocus, use ONLY natural-language phrases like "Entrust events 2024" or "Entrust trade shows last year" - NEVER use site: queries or URL formats.
+IMPORTANT: Make the search focus queries EXTREMELY SPECIFIC and HIGHLY VARIED, focusing on exact company websites, event pages, and very specific natural language searches that would give different but complementary results.
 `;
 
     const controller = new AbortController();

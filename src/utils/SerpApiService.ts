@@ -13,14 +13,31 @@ export class SerpApiService {
     return localStorage.getItem(this.API_KEY_STORAGE_KEY);
   }
 
-  // Enhanced with better error handling, retry logic, and direct URL filtering
+  // Enhanced with better error handling and direct URL filtering
   static async getTopSearchUrls(query: string, limit: number = 5, dateRange?: string, extraContext?: string): Promise<string[]> {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       throw new Error('SerpAPI key not found');
     }
 
-    // Compose richer query with context
+    // Handle direct website URLs or domains
+    if (query.includes('.com/') || query.includes('.org/') || query.includes('.net/')) {
+      // It's likely a direct URL path - ensure it has https:// prefix
+      if (!query.startsWith('http')) {
+        query = 'https://' + query;
+      }
+      console.log(`Direct URL path detected, returning: ${query}`);
+      return [query];
+    }
+    
+    if (this.looksLikeDomain(query)) {
+      // It's a domain - ensure it has https:// prefix
+      const url = query.startsWith('http') ? query : `https://${query}`;
+      console.log(`Domain detected, returning: ${url}`);
+      return [url];
+    }
+    
+    // Compose search query with context
     let searchQ = query;
     if (extraContext) searchQ += " " + extraContext;
     if (dateRange) searchQ += " " + dateRange;
@@ -60,7 +77,12 @@ export class SerpApiService {
         // Extract and prioritize direct URLs (not google.com, not search results)
         let urls: string[] = [];
         
-        // First priority: organic results from non-Google domains
+        // First check for knowledge_graph.website if available
+        if (data.knowledge_graph && data.knowledge_graph.website) {
+          urls.push(data.knowledge_graph.website); // Add to beginning as high priority
+        }
+        
+        // Then look for organic results from non-Google domains
         if (data.organic_results && Array.isArray(data.organic_results)) {
           // First pass: collect direct, non-Google URLs
           for (const result of data.organic_results) {
@@ -93,11 +115,6 @@ export class SerpApiService {
             }
           }
         }
-        
-        // Check for knowledge_graph.website if available
-        if (data.knowledge_graph && data.knowledge_graph.website) {
-          urls.unshift(data.knowledge_graph.website); // Add to beginning as high priority
-        }
 
         console.log(`SerpAPI returned ${urls.length} unique URLs for query: "${searchQ}"`);
         return urls.slice(0, limit);
@@ -123,9 +140,6 @@ export class SerpApiService {
         }
       }
     }
-    
-    // All retries failed or timeout occurred
-    console.warn(`SerpAPI failed after ${retries} retries for query: "${searchQ}"`);
     
     // For site: queries, extract the domain and return it as a direct URL
     if (query.startsWith('site:')) {

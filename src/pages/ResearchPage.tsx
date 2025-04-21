@@ -1,9 +1,11 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { createPlannerResponse } from "@/services/planner";
 import ResearchPlan from "@/components/ResearchPlan";
 import ApiKeyManager from "@/components/ApiKeyManager";
 import { WebScraperService, ScrapingResult } from "@/services/webScraperService";
+import { CleanerAgentService } from "@/services/cleanerAgentService";
 import { FirecrawlService } from "@/utils/FirecrawlService";
 import { supabase } from "@/integrations/supabase/client";
 import ResearchForm from "@/components/research/ResearchForm";
@@ -24,6 +26,7 @@ interface PlannerResponse {
   searchFocus: string[];
   informationGoals: string[];
   originalQuestion: string;
+  context?: string;
 }
 
 interface ResearchIteration {
@@ -31,6 +34,13 @@ interface ResearchIteration {
   results: ScrapingResult[];
   analysis?: string;
   extractionFocus?: string;
+}
+
+interface CleanerResponse {
+  structuredInsights: Record<string, Array<{fact: string, source: string}>>;
+  relevantFindings: string[];
+  suggestedNextSteps?: string[];
+  analysis: string;
 }
 
 const MAX_RESEARCH_ITERATIONS = 2;
@@ -45,7 +55,9 @@ const ResearchPage = () => {
   const [iterations, setIterations] = useState<ResearchIteration[]>([]);
   const [currentIteration, setCurrentIteration] = useState(0);
   const [isReasoning, setIsReasoning] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
   const [analysisText, setAnalysisText] = useState<string | null>(null);
+  const [structuredInsights, setStructuredInsights] = useState<CleanerResponse | null>(null);
   const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
   const [researchLogs, setResearchLogs] = useState<LogEntry[]>([]);
   const [currentStep, setCurrentStep] = useState<string>("Initializing research...");
@@ -99,6 +111,7 @@ const ResearchPage = () => {
     setTimeoutMessage("Research canceled by user");
     setIsResearching(false);
     setIsReasoning(false);
+    setIsCleaning(false);
     addLog("Research canceled by user", 'warning');
     toast({
       title: "Research Canceled",
@@ -129,6 +142,7 @@ const ResearchPage = () => {
       setIterations([]);
       setCurrentIteration(0);
       setAnalysisText(null);
+      setStructuredInsights(null);
       setTimeoutMessage(null);
       setTimeElapsed(0);
       
@@ -209,47 +223,77 @@ const ResearchPage = () => {
       setCurrentStep(`Preparing to search ${searchTargets.length} targets...`);
       addLog(`Preparing search for targets: ${searchTargets.join(", ")}`, 'info');
 
-      const allResults = [];
-      for (let i = 0; i < searchTargets.length; i++) {
-        const target = searchTargets[i];
-        const targetProgress = 15 + Math.floor((i / searchTargets.length) * 45);
-        setResearchProgress(targetProgress);
-        setCurrentStep(`Searching target ${i+1}/${searchTargets.length}: "${target}"...`);
-        addLog(`Scraping search target: "${target}"`, 'info');
-        try {
-          const targetResults = await WebScraperService.scrapeSearchTargets([target]);
-          if (targetResults.length > 0) {
-            addLog(`Found ${targetResults.length} results for "${target}"`, 'success');
-            allResults.push(...targetResults);
-          } else {
-            addLog(`No results found for "${target}"`, 'warning');
-          }
-        } catch (error) {
-          addLog(`Error scraping "${target}": ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-        }
-      }
+      // Process all targets at once rather than individually
+      addLog(`Scraping all search targets...`, 'info');
+      const newResults = await WebScraperService.scrapeSearchTargets(
+        searchTargets,
+        plannerResponse.context,
+        plannerResponse.informationGoals
+      );
 
       setResearchProgress(60);
-
-      if (allResults.length === 0) {
+      
+      if (newResults.length === 0) {
         addLog("No results found for any search targets", 'warning');
         toast({
-          title: "No Initial Results Found",
-          description: "No results found for the initial queries. AI will try to improve search.",
+          title: "No Results Found",
+          description: "No results found for the search targets. Try refining your question.",
           variant: "destructive",
         });
       } else {
-        addLog(`Found a total of ${allResults.length} results across all targets`, 'success');
+        addLog(`Found ${newResults.length} results across all targets`, 'success');
+        // Merge with existing results
+        const allResults = [...researchResults, ...newResults];
+        setResearchResults(allResults);
+        
+        // Update the current iteration with its results
+        const updatedIterations = [...iterations];
+        if (updatedIterations.length > 0) {
+          updatedIterations[updatedIterations.length - 1].results = newResults;
+        }
+        setIterations(updatedIterations);
+        
+        // Use the cleaner agent to process results
+        if (allResults.length > 0) {
+          setIsCleaning(true);
+          setCurrentStep("Cleaning and structuring research findings...");
+          setResearchProgress(75);
+          addLog("Starting cleaner agent for structured insights", 'info');
+          
+          try {
+            const cleanerResponse = await CleanerAgentService.processResults(
+              allResults,
+              plannerResponse.intent,
+              plannerResponse.searchFocus,
+              plannerResponse.informationGoals,
+              plannerResponse.originalQuestion,
+              plannerResponse.context
+            );
+            
+            if (cleanerResponse) {
+              setStructuredInsights(cleanerResponse);
+              setAnalysisText(cleanerResponse.analysis);
+              addLog("Cleaner agent completed successfully", 'success');
+            } else {
+              addLog("Cleaner agent failed to extract insights", 'warning');
+            }
+          } catch (error) {
+            console.error("Error in cleaner agent:", error);
+            addLog(`Cleaner agent error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+          } finally {
+            setIsCleaning(false);
+          }
+        }
       }
 
+      // Even if we don't have results from this iteration, try refinement
       setIsReasoning(true);
       setCurrentStep("AI analyzing results and refining search strategy...");
       addLog("Starting AI analysis of search results", 'info');
 
-      const currentResults = [...researchResults, ...allResults];
-      setResearchResults(currentResults);
-
-      setResearchProgress(75);
+      const currentResults = [...researchResults, ...newResults];
+      
+      setResearchProgress(85);
 
       addLog("Requesting refinement from AI service", 'info');
       const refinementPromise = supabase.functions.invoke('refine-research', {
@@ -257,7 +301,8 @@ const ResearchPage = () => {
           searchTargets, 
           currentResults,
           researchGoals: plannerResponse.informationGoals,
-          iteration: currentIteration
+          iteration: currentIteration,
+          context: plannerResponse.context
         }
       });
 
@@ -285,33 +330,60 @@ const ResearchPage = () => {
 
       addLog("AI refinement completed successfully", 'success');
 
-      const updatedIterations = [...iterations];
-
-      if (updatedIterations.length > 0) {
-        updatedIterations[updatedIterations.length - 1].results = allResults;
-        addLog(`Updated iteration ${updatedIterations.length} with ${allResults.length} results`, 'info');
-      }
-
+      // Add the new iteration with improved targets
       if (refinementData.improvedTargets && refinementData.improvedTargets.length > 0) {
         const newTargets = refinementData.improvedTargets.slice(0, 5);
-        updatedIterations.push({
+        const newIteration = {
           targets: newTargets,
           results: refinementData.newResults || [],
           analysis: refinementData.analysis,
           extractionFocus: refinementData.extractionFocus
-        });
+        };
+        
+        setIterations(prev => [...prev, newIteration]);
         addLog(`Created new iteration with ${newTargets.length} improved search targets`, 'success');
       }
 
-      setIterations(updatedIterations);
-
+      // Add any new results from refinement
       if (refinementData.newResults && refinementData.newResults.length > 0) {
         setResearchResults(prev => [...prev, ...refinementData.newResults]);
         addLog(`Added ${refinementData.newResults.length} additional results from AI refinement`, 'success');
+        
+        // If we got new results but haven't run the cleaner yet
+        if (!structuredInsights && !isCleaning) {
+          setIsCleaning(true);
+          setCurrentStep("Processing newly found results...");
+          addLog("Starting cleaner agent for new results", 'info');
+          
+          try {
+            const updatedResults = [...currentResults, ...refinementData.newResults];
+            const cleanerResponse = await CleanerAgentService.processResults(
+              updatedResults,
+              plannerResponse.intent,
+              plannerResponse.searchFocus,
+              plannerResponse.informationGoals,
+              plannerResponse.originalQuestion,
+              plannerResponse.context
+            );
+            
+            if (cleanerResponse) {
+              setStructuredInsights(cleanerResponse);
+              setAnalysisText(cleanerResponse.analysis);
+              addLog("Cleaner agent completed successfully", 'success');
+            }
+          } catch (error) {
+            console.error("Error in cleaner agent for new results:", error);
+            addLog(`Cleaner agent error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+          } finally {
+            setIsCleaning(false);
+          }
+        }
       }
 
-      setAnalysisText(refinementData.analysis || "No analysis available");
-      addLog("Research analysis text updated", 'info');
+      // If we have an analysis from the refinement, use it if we don't have one already
+      if (refinementData.analysis && !analysisText) {
+        setAnalysisText(refinementData.analysis);
+      }
 
       setResearchProgress(100);
       setCurrentStep("Research completed successfully");
@@ -320,7 +392,7 @@ const ResearchPage = () => {
         addLog("No results found after all iterations", 'warning');
         toast({
           title: "No Results Found",
-          description: "No results found after AI refinement. Try a different research question.",
+          description: "No results found. Try a different research question or add more specific terms.",
           variant: "destructive",
         });
       } else {
@@ -342,6 +414,7 @@ const ResearchPage = () => {
     } finally {
       setIsResearching(false);
       setIsReasoning(false);
+      setIsCleaning(false);
     }
   };
 
@@ -422,7 +495,7 @@ const ResearchPage = () => {
           
           <ResearchProgress 
             isResearching={isResearching}
-            isReasoning={isReasoning}
+            isReasoning={isReasoning || isCleaning}
             progress={researchProgress}
             timeoutMessage={timeoutMessage}
             logs={researchLogs}
@@ -433,6 +506,7 @@ const ResearchPage = () => {
           <ResearchResults 
             results={researchResults}
             analysisText={analysisText}
+            structuredInsights={structuredInsights}
           />
           
           <ResearchIterations iterations={iterations} />
