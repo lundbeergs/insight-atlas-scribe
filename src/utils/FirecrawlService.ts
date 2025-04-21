@@ -51,11 +51,27 @@ export class FirecrawlService {
   // Enhanced URL validation
   static isValidUrl(url: string): boolean {
     try {
+      // Basic URL parsing
       new URL(url);
-      // Additional check to prevent crawling Google search URLs
+      
+      // Additional filtering rules
       if (url.startsWith('https://www.google.com/search')) {
         return false;
       }
+      
+      // Check for common URL issues
+      if (url.includes(' ') || 
+          url.includes('\n') || 
+          url.includes('\t')) {
+        return false;
+      }
+      
+      // Check for properly encoded Unicode characters
+      if (/[^\x00-\x7F]/.test(url) && !url.includes('%')) {
+        // URL contains non-ASCII characters that aren't encoded
+        return false;
+      }
+      
       return true;
     } catch {
       return false;
@@ -64,6 +80,10 @@ export class FirecrawlService {
 
   // Improved URL formatting with better domain detection
   static formatUrl(input: string): string {
+    if (!input || typeof input !== 'string') {
+      return '';
+    }
+    
     // Already a valid URL with http/https
     if (input.startsWith('http://') || input.startsWith('https://')) {
       return input;
@@ -74,19 +94,42 @@ export class FirecrawlService {
       return `https://${input}`;
     }
     
+    // Handle Unicode characters in domain names (like Grönalund)
+    if (/[^\x00-\x7F]/.test(input) && this.looksLikeDomainWithUnicode(input)) {
+      try {
+        // Try to encode the domain properly
+        const encodedInput = encodeURI(input);
+        return `https://${encodedInput}`;
+      } catch {
+        // If encoding fails, return empty
+        return "";
+      }
+    }
+    
     // Return empty string for non-URL inputs
     return "";
   }
   
   // Helper to identify if a string looks like a domain
   private static looksLikeDomain(input: string): boolean {
+    if (!input) return false;
+    
     const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}/;
     return domainPattern.test(input) || 
            input.includes('.com') || 
            input.includes('.org') || 
            input.includes('.net') ||
            input.includes('.edu') ||
-           input.includes('.gov');
+           input.includes('.gov') ||
+           input.includes('.se') || // For Swedish domains
+           input.includes('.no');   // For Norwegian domains
+  }
+  
+  // Helper to identify if Unicode string looks like a domain
+  private static looksLikeDomainWithUnicode(input: string): boolean {
+    return input.includes('.') && 
+           !input.includes(' ') &&
+           input.length > 4;
   }
 
   private static enforceRateLimit(): boolean {
@@ -105,6 +148,7 @@ export class FirecrawlService {
     return true;
   }
 
+  // Improved crawl function with better error handling and retries
   static async crawlWebsite(url: string, timeoutMs: number = 30000): Promise<{ success: boolean; error?: string; data?: any }> {
     // Skip invalid URLs early
     if (!url || !this.isValidUrl(url)) {
@@ -118,6 +162,9 @@ export class FirecrawlService {
     if (!apiKey) {
       return { success: false, error: 'API key not found' };
     }
+
+    // Ensure URL is properly formatted
+    url = this.formatUrl(url) || url;
 
     // Create abort controller for timeout
     const controller = new AbortController();
@@ -153,10 +200,15 @@ export class FirecrawlService {
         url
       });
 
+      // Attempt crawl with more options for better content extraction
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
-        limit: 5, // Reduced to improve performance
+        limit: 5, 
         scrapeOptions: {
-          formats: ['markdown', 'html']
+          formats: ['markdown', 'html', 'text'],
+          includeTables: true,
+          followRedirects: true,
+          maxWait: 15000,
+          timeout: 25000
         }
       }) as CrawlResponse;
 
@@ -173,7 +225,7 @@ export class FirecrawlService {
         };
       }
 
-      // MODIFIED: Always accept content of any length
+      // Always accept content of any length
       console.log(`Crawl successful for ${url}, content length: ${crawlResponse.content?.length || 0} chars`);
       return { 
         success: true,
@@ -188,6 +240,16 @@ export class FirecrawlService {
         return { 
           success: false, 
           error: `Request timed out after ${timeoutMs/1000} seconds` 
+        };
+      }
+      
+      // Check if it's a rate limit error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Rate limit')) {
+        console.error(`Rate limit exceeded for ${url}: ${errorMessage}`);
+        return {
+          success: false,
+          error: `Rate limit exceeded: ${errorMessage}`
         };
       }
       
