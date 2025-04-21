@@ -201,10 +201,11 @@ export class FirecrawlService {
       });
 
       // Attempt crawl with more options for better content extraction
+      // Fixed: Changed 'text' to 'content' in the formats array
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
         limit: 5, 
         scrapeOptions: {
-          formats: ['markdown', 'html', 'text'],
+          formats: ['markdown', 'html', 'content'],
           includeTables: true,
           followRedirects: true,
           maxWait: 15000,
