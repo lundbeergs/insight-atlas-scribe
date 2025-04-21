@@ -1,4 +1,3 @@
-
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface ErrorResponse {
@@ -200,7 +199,6 @@ export class FirecrawlService {
         limit: 5, 
         scrapeOptions: {
           formats: ['markdown', 'html', 'content'],
-          maxWait: 15000,
           timeout: 25000
         }
       }) as CrawlResponse;
