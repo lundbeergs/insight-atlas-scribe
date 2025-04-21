@@ -1,4 +1,5 @@
-import React, { useState, useRef } from "react";
+
+import React, { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { createPlannerResponse } from "@/services/planner";
 import ResearchPlan from "@/components/ResearchPlan";
@@ -12,6 +13,12 @@ import ResearchResults from "@/components/research/ResearchResults";
 import ResearchIterations from "@/components/research/ResearchIterations";
 import { Button } from "@/components/ui/button";
 import { Loader2, Search, RefreshCw, XCircle } from "lucide-react";
+
+interface LogEntry {
+  message: string;
+  timestamp: Date;
+  type: 'info' | 'warning' | 'error' | 'success';
+}
 
 interface PlannerResponse {
   intent: string;
@@ -42,9 +49,58 @@ const ResearchPage = () => {
   const [isReasoning, setIsReasoning] = useState(false);
   const [analysisText, setAnalysisText] = useState<string | null>(null);
   const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
+  const [researchLogs, setResearchLogs] = useState<LogEntry[]>([]);
+  const [currentStep, setCurrentStep] = useState<string>("Initializing research...");
+  const [timeElapsed, setTimeElapsed] = useState<number>(0);
+  
   const { toast } = useToast();
   
   const researchTimeoutRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
+  
+  // Add a log entry
+  const addLog = (message: string, type: LogEntry['type'] = 'info') => {
+    setResearchLogs(prev => [...prev, {
+      message,
+      timestamp: new Date(),
+      type
+    }]);
+  };
+  
+  // Update timer
+  useEffect(() => {
+    if (isResearching && !timerIntervalRef.current) {
+      startTimeRef.current = Date.now();
+      timerIntervalRef.current = window.setInterval(() => {
+        if (startTimeRef.current) {
+          const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+          setTimeElapsed(elapsed);
+        }
+      }, 1000);
+    } else if (!isResearching && timerIntervalRef.current) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    
+    return () => {
+      if (timerIntervalRef.current) {
+        window.clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, [isResearching]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (researchTimeoutRef.current) {
+        window.clearTimeout(researchTimeoutRef.current);
+      }
+      if (timerIntervalRef.current) {
+        window.clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, []);
   
   const cancelResearch = () => {
     WebScraperService.cancelResearch();
@@ -55,6 +111,9 @@ const ResearchPage = () => {
     setTimeoutMessage("Research canceled by user");
     setIsResearching(false);
     setIsReasoning(false);
+    
+    addLog("Research canceled by user", 'warning');
+    
     toast({
       title: "Research Canceled",
       description: "The research operation was canceled.",
@@ -74,7 +133,10 @@ const ResearchPage = () => {
     }
     
     setLoading(true);
+    setResearchLogs([]);
+    
     try {
+      addLog(`Generating research plan for: "${question}"`, 'info');
       const response = await createPlannerResponse(question);
       setPlannerResponse(response);
       setResearchResults([]);
@@ -82,6 +144,9 @@ const ResearchPage = () => {
       setCurrentIteration(0);
       setAnalysisText(null);
       setTimeoutMessage(null);
+      setTimeElapsed(0);
+      
+      addLog(`Research plan created with ${response.searchFocus.length} search targets`, 'success');
       
       toast({
         title: "Research Plan Generated",
@@ -89,6 +154,8 @@ const ResearchPage = () => {
       });
     } catch (error) {
       console.error("Error generating research plan:", error);
+      addLog(`Failed to generate research plan: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      
       toast({
         title: "Error",
         description: "Failed to generate research plan. Please try again.",
@@ -120,10 +187,20 @@ const ResearchPage = () => {
     }
 
     setIsResearching(true);
-    setResearchProgress(10);
+    setResearchProgress(5);
     setTimeoutMessage(null);
+    setCurrentStep("Initializing research process...");
+    
+    addLog("Starting research execution", 'info');
+    
+    // Reset timer
+    if (startTimeRef.current) {
+      startTimeRef.current = Date.now();
+      setTimeElapsed(0);
+    }
     
     researchTimeoutRef.current = window.setTimeout(() => {
+      addLog(`Research timed out after ${RESEARCH_TIMEOUT_MS/1000} seconds`, 'error');
       setTimeoutMessage(`Research timed out after ${RESEARCH_TIMEOUT_MS/1000} seconds`);
       setIsResearching(false);
       setIsReasoning(false);
@@ -135,13 +212,19 @@ const ResearchPage = () => {
     }, RESEARCH_TIMEOUT_MS);
     
     if (iterations.length === 0) {
+      const initialTargets = plannerResponse.searchFocus.slice(0, 5);
       setIterations([{
-        targets: plannerResponse.searchFocus.slice(0, 5),
+        targets: initialTargets,
         results: []
       }]);
       setCurrentIteration(1);
+      addLog(`Initialized iteration 1 with ${initialTargets.length} targets`, 'info');
     } else {
-      setCurrentIteration(prev => prev + 1);
+      setCurrentIteration(prev => {
+        const newIteration = prev + 1;
+        addLog(`Starting iteration ${newIteration}`, 'info');
+        return newIteration;
+      });
     }
     
     try {
@@ -149,10 +232,37 @@ const ResearchPage = () => {
         ? plannerResponse.searchFocus.slice(0, 5)
         : iterations[iterations.length - 1].targets.slice(0, 5);
       
-      setResearchProgress(30);
-      console.log("Starting research with search targets:", searchTargets);
+      setResearchProgress(15);
+      setCurrentStep(`Preparing to search ${searchTargets.length} targets...`);
+      addLog(`Preparing search for targets: ${searchTargets.join(", ")}`, 'info');
       
-      const results = await WebScraperService.scrapeSearchTargets(searchTargets);
+      // Iterate through each target for more granular progress updates
+      const allResults = [];
+      for (let i = 0; i < searchTargets.length; i++) {
+        const target = searchTargets[i];
+        const targetProgress = 15 + Math.floor((i / searchTargets.length) * 45); // Progress from 15% to 60%
+        setResearchProgress(targetProgress);
+        setCurrentStep(`Searching target ${i+1}/${searchTargets.length}: "${target}"...`);
+        addLog(`Scraping search target: "${target}"`, 'info');
+        
+        try {
+          // Scrape one target at a time for more granular updates
+          const targetResults = await WebScraperService.scrapeSearchTargets([target]);
+          if (targetResults.length > 0) {
+            addLog(`Found ${targetResults.length} results for "${target}"`, 'success');
+            allResults.push(...targetResults);
+          } else {
+            addLog(`No results found for "${target}"`, 'warning');
+          }
+          
+          // Check if research was canceled
+          if (timeoutMessage) {
+            return;
+          }
+        } catch (error) {
+          addLog(`Error scraping "${target}": ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        }
+      }
       
       if (timeoutMessage) {
         return;
@@ -160,21 +270,27 @@ const ResearchPage = () => {
       
       setResearchProgress(60);
       
-      if (results.length === 0) {
+      if (allResults.length === 0) {
+        addLog("No results found for any search targets", 'warning');
         toast({
           title: "No Initial Results Found",
           description: "No results found for the initial queries. AI will try to improve search.",
           variant: "destructive",
         });
+      } else {
+        addLog(`Found a total of ${allResults.length} results across all targets`, 'success');
       }
       
       setIsReasoning(true);
+      setCurrentStep("AI analyzing results and refining search strategy...");
+      addLog("Starting AI analysis of search results", 'info');
       
-      const currentResults = [...researchResults, ...results];
+      const currentResults = [...researchResults, ...allResults];
       setResearchResults(currentResults);
       
-      setResearchProgress(80);
+      setResearchProgress(75);
       
+      addLog("Requesting refinement from AI service", 'info');
       const refinementPromise = supabase.functions.invoke('refine-research', {
         body: { 
           searchTargets, 
@@ -185,12 +301,16 @@ const ResearchPage = () => {
       });
       
       const refinementTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Edge function timed out")), 45000);
+        setTimeout(() => {
+          addLog("AI refinement timed out after 45 seconds", 'error');
+          reject(new Error("Edge function timed out"));
+        }, 45000);
       });
       
       const refinementResponse = await Promise.race([refinementPromise, refinementTimeout])
         .catch(error => {
           console.error("Edge function error:", error);
+          addLog(`AI refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
           return { data: { error: "Edge function timed out" } };
         });
       
@@ -202,48 +322,61 @@ const ResearchPage = () => {
       
       if (refinementData.error) {
         console.error("Research refinement failed:", refinementData.error);
+        addLog(`AI refinement error: ${refinementData.error}`, 'error');
         throw new Error(refinementData.error);
       }
+      
+      addLog("AI refinement completed successfully", 'success');
       
       const updatedIterations = [...iterations];
       
       if (updatedIterations.length > 0) {
-        updatedIterations[updatedIterations.length - 1].results = results;
+        updatedIterations[updatedIterations.length - 1].results = allResults;
+        addLog(`Updated iteration ${updatedIterations.length} with ${allResults.length} results`, 'info');
       }
       
       if (refinementData.improvedTargets && refinementData.improvedTargets.length > 0) {
+        const newTargets = refinementData.improvedTargets.slice(0, 5);
         updatedIterations.push({
-          targets: refinementData.improvedTargets.slice(0, 5),
+          targets: newTargets,
           results: refinementData.newResults || [],
           analysis: refinementData.analysis,
           extractionFocus: refinementData.extractionFocus
         });
+        addLog(`Created new iteration with ${newTargets.length} improved search targets`, 'success');
       }
       
       setIterations(updatedIterations);
       
       if (refinementData.newResults && refinementData.newResults.length > 0) {
         setResearchResults(prev => [...prev, ...refinementData.newResults]);
+        addLog(`Added ${refinementData.newResults.length} additional results from AI refinement`, 'success');
       }
       
       setAnalysisText(refinementData.analysis || "No analysis available");
+      addLog("Research analysis text updated", 'info');
       
       setResearchProgress(100);
+      setCurrentStep("Research completed successfully");
       
       if (currentResults.length === 0 && (!refinementData.newResults || refinementData.newResults.length === 0)) {
+        addLog("No results found after all iterations", 'warning');
         toast({
           title: "No Results Found",
           description: "No results found after AI refinement. Try a different research question.",
           variant: "destructive",
         });
       } else {
+        const totalResults = currentResults.length + (refinementData.newResults?.length || 0);
+        addLog(`Research completed with ${totalResults} total results`, 'success');
         toast({
           title: "Research Complete",
-          description: `Found ${currentResults.length + (refinementData.newResults?.length || 0)} relevant results.`,
+          description: `Found ${totalResults} relevant results.`,
         });
       }
     } catch (error) {
       console.error("Error executing research:", error);
+      addLog(`Research execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       toast({
         title: "Research Failed",
         description: "An error occurred while researching. Please try again.",
@@ -263,6 +396,7 @@ const ResearchPage = () => {
     if (currentIteration < MAX_RESEARCH_ITERATIONS) {
       executeResearch();
     } else {
+      addLog(`Maximum iterations (${MAX_RESEARCH_ITERATIONS}) reached`, 'warning');
       toast({
         title: "Research Limit Reached",
         description: `Maximum iterations (${MAX_RESEARCH_ITERATIONS}) reached. Please start a new research question.`,
@@ -338,6 +472,9 @@ const ResearchPage = () => {
             isReasoning={isReasoning}
             progress={researchProgress}
             timeoutMessage={timeoutMessage}
+            logs={researchLogs}
+            currentStep={currentStep}
+            timeElapsed={timeElapsed}
           />
           
           <ResearchResults 
