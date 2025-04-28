@@ -194,13 +194,9 @@ export class FirecrawlService {
         url
       });
 
-      // Use only supported properties for the Firecrawl library
+      // Use ONLY the documented options for the Firecrawl library
       const crawlResponse = await this.firecrawlApp.crawlUrl(url, {
-        limit: 5, 
-        scrapeOptions: {
-          formats: ['markdown', 'html', 'content'],
-          timeout: 25000
-        }
+        limit: 5
       }) as CrawlResponse;
 
       // Cache the result
